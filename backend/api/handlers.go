@@ -50,12 +50,52 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name       string `json:"name"`
 		ScriptPath string `json:"script_path"`
+		Template   string `json:"template"`
 		Type       string `json:"type"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	// Set default type if not provided
+	if req.Type == "" {
+		req.Type = "ML_JOB"
+	}
+
+	// Map template to script path if provided
+	if req.Template != "" && req.ScriptPath == "" {
+		templateMap := map[string]string{
+			"gpu_oom":            "../jobs/gpu_oom.py",
+			"missing_checkpoint": "../jobs/missing_checkpoint.py",
+			"dependency_error":   "../jobs/dependency_error.py",
+			"data_path_error":    "../jobs/data_path_error.py",
+			"timeout":            "../jobs/timeout.py",
+			"successful":         "../jobs/successful_training.py",
+			"tool_loop_agent":    "../agents/tool_loop_agent.py",
+		}
+
+		if path, ok := templateMap[req.Template]; ok {
+			req.ScriptPath = path
+			if req.Name == "" {
+				req.Name = "Test Job: " + req.Template
+			}
+		} else {
+			http.Error(w, "Invalid template name", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Validate script path
+	if req.ScriptPath == "" {
+		http.Error(w, "script_path or template is required", http.StatusBadRequest)
+		return
+	}
+
+	// Set default name if not provided
+	if req.Name == "" {
+		req.Name = "Workload " + req.Type
 	}
 
 	// Create workload entry

@@ -5,70 +5,114 @@ import (
 	"strings"
 )
 
+// FailureType constants
+const (
+	GPUOutOfMemory   = "GPU_OUT_OF_MEMORY"
+	MissingCheckpoint = "MISSING_CHECKPOINT"
+	DependencyError  = "DEPENDENCY_ERROR"
+	DataPathError    = "DATA_PATH_ERROR"
+	Timeout          = "TIMEOUT"
+	ROCmError        = "ROCM_ERROR"
+	GPUDriverError   = "GPU_DRIVER_ERROR"
+	UnknownError     = "UNKNOWN_ERROR"
+)
+
+// ClassificationResult contains the classification outcome with confidence
+type ClassificationResult struct {
+	FailureType string
+	Confidence  float64
+}
+
 // ClassifyFailure analyzes logs and metrics to determine failure type
 func ClassifyFailure(logs, gpuMetrics string) string {
+	result := ClassifyWithConfidence(logs, gpuMetrics)
+	return result.FailureType
+}
+
+// ClassifyWithConfidence analyzes logs and returns failure type with confidence score
+func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 	logsLower := strings.ToLower(logs)
 
-	// GPU OOM detection
-	if strings.Contains(logsLower, "out of memory") ||
-		strings.Contains(logsLower, "oom") ||
-		strings.Contains(logsLower, "cudamalloc failed") ||
-		strings.Contains(logsLower, "hip error: out of memory") ||
+	// GPU OOM detection - high confidence patterns
+	if strings.Contains(logsLower, "hip out of memory") ||
+		strings.Contains(logsLower, "hip error: out of memory") {
+		return ClassificationResult{GPUOutOfMemory, 0.95}
+	}
+	if strings.Contains(logsLower, "out of memory") || strings.Contains(logsLower, "oom") {
+		return ClassificationResult{GPUOutOfMemory, 0.85}
+	}
+	if strings.Contains(logsLower, "cudamalloc failed") ||
 		strings.Contains(logsLower, "rocm out of memory") {
-		return "gpu_oom"
+		return ClassificationResult{GPUOutOfMemory, 0.90}
 	}
 
 	// Missing checkpoint detection
+	if strings.Contains(logsLower, "checkpoint not found") {
+		return ClassificationResult{MissingCheckpoint, 0.95}
+	}
 	if strings.Contains(logsLower, "checkpoint") &&
 		(strings.Contains(logsLower, "not found") ||
 		 strings.Contains(logsLower, "missing") ||
 		 strings.Contains(logsLower, "does not exist")) {
-		return "missing_checkpoint"
+		return ClassificationResult{MissingCheckpoint, 0.85}
 	}
 
-	// Dependency error detection
-	if strings.Contains(logsLower, "importerror") ||
-		strings.Contains(logsLower, "modulenotfounderror") ||
-		strings.Contains(logsLower, "no module named") ||
+	// Dependency error detection - high confidence
+	if strings.Contains(logsLower, "modulenotfounderror") ||
+		strings.Contains(logsLower, "importerror") {
+		return ClassificationResult{DependencyError, 0.95}
+	}
+	if strings.Contains(logsLower, "no module named") ||
 		strings.Contains(logsLower, "cannot import") {
-		return "dependency_error"
+		return ClassificationResult{DependencyError, 0.90}
+	}
+	if strings.Contains(logsLower, "rocm version mismatch") ||
+		strings.Contains(logsLower, "rocm-compatible") && strings.Contains(logsLower, "not found") {
+		return ClassificationResult{DependencyError, 0.92}
 	}
 
 	// Data path error detection
+	if strings.Contains(logsLower, "dataset") &&
+		(strings.Contains(logsLower, "not found") || strings.Contains(logsLower, "does not exist")) {
+		return ClassificationResult{DataPathError, 0.90}
+	}
+	if strings.Contains(logsLower, "no such file or directory") {
+		return ClassificationResult{DataPathError, 0.85}
+	}
 	if (strings.Contains(logsLower, "file") || strings.Contains(logsLower, "path")) &&
-		(strings.Contains(logsLower, "not found") ||
-		 strings.Contains(logsLower, "no such file") ||
-		 strings.Contains(logsLower, "does not exist")) {
-		return "data_path_error"
+		(strings.Contains(logsLower, "not found") || strings.Contains(logsLower, "does not exist")) {
+		return ClassificationResult{DataPathError, 0.75}
 	}
 
 	// Timeout detection
+	if strings.Contains(logsLower, "no progress detected") {
+		return ClassificationResult{Timeout, 0.90}
+	}
+	if strings.Contains(logsLower, "runtime exceeded") ||
+		strings.Contains(logsLower, "execution timeout") {
+		return ClassificationResult{Timeout, 0.92}
+	}
 	if strings.Contains(logsLower, "timeout") ||
 		strings.Contains(logsLower, "timed out") ||
 		strings.Contains(logsLower, "deadline exceeded") {
-		return "timeout"
+		return ClassificationResult{Timeout, 0.80}
 	}
 
 	// ROCm/HIP specific errors
 	if strings.Contains(logsLower, "hip error") ||
 		strings.Contains(logsLower, "rocm error") ||
 		strings.Contains(logsLower, "hsa error") {
-		return "rocm_error"
+		return ClassificationResult{ROCmError, 0.88}
 	}
 
 	// CUDA compatibility issues (for mixed environments)
 	if strings.Contains(logsLower, "cuda") &&
 		(strings.Contains(logsLower, "not available") ||
 		 strings.Contains(logsLower, "driver version")) {
-		return "gpu_driver_error"
+		return ClassificationResult{GPUDriverError, 0.85}
 	}
 
-	// Generic GPU error
-	if strings.Contains(logsLower, "gpu") && strings.Contains(logsLower, "error") {
-		return "gpu_error"
-	}
-
-	return "unknown_error"
+	return ClassificationResult{UnknownError, 0.50}
 }
 
 // ExtractEvidenceFromLogs extracts relevant error lines from logs

@@ -12,6 +12,8 @@ import (
 )
 
 type Report struct {
+	FailureType    string    `json:"failure_type"`
+	Confidence     float64   `json:"confidence"`
 	RootCause      string    `json:"root_cause"`
 	Evidence       []string  `json:"evidence"`
 	RecommendedFix string    `json:"recommended_fix"`
@@ -20,16 +22,29 @@ type Report struct {
 }
 
 func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
-	// First, classify the failure type
-	failureType := ""
+	// Classify the failure type with confidence
+	var classResult classifier.ClassificationResult
+	var failureType string
+
 	if workload.FailureType != nil {
 		failureType = *workload.FailureType
+		classResult = classifier.ClassificationResult{
+			FailureType: failureType,
+			Confidence:  0.95, // High confidence if already classified
+		}
 	} else if workload.JobLogs != nil {
 		gpuMetrics := ""
 		if workload.GPUMetrics != nil {
 			gpuMetrics = *workload.GPUMetrics
 		}
-		failureType = classifier.ClassifyFailure(*workload.JobLogs, gpuMetrics)
+		classResult = classifier.ClassifyWithConfidence(*workload.JobLogs, gpuMetrics)
+		failureType = classResult.FailureType
+	} else {
+		classResult = classifier.ClassificationResult{
+			FailureType: classifier.UnknownError,
+			Confidence:  0.50,
+		}
+		failureType = classifier.UnknownError
 	}
 
 	// Extract evidence from logs
@@ -40,17 +55,17 @@ func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
 
 	// Try AI diagnosis if Fireworks client is available
 	if fwClient != nil && workload.JobLogs != nil {
-		aiReport := callAI(fwClient, workload, failureType, evidence)
+		aiReport := callAI(fwClient, workload, failureType, evidence, classResult.Confidence)
 		if aiReport != nil {
 			return *aiReport
 		}
 	}
 
 	// Fallback to rule-based diagnosis
-	return ruleBasedDiagnosis(failureType, evidence)
+	return ruleBasedDiagnosis(failureType, evidence, classResult.Confidence)
 }
 
-func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType string, evidence []string) *Report {
+func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType string, evidence []string, confidence float64) *Report {
 	context := fmt.Sprintf(`You are an AI expert in ML infrastructure and AMD ROCm GPU debugging.
 
 Workload Information:
@@ -94,6 +109,8 @@ Respond in JSON format with these fields:
 	if jsonStart >= 0 && jsonEnd > jsonStart {
 		jsonStr := response[jsonStart : jsonEnd+1]
 		if err := json.Unmarshal([]byte(jsonStr), &report); err == nil {
+			report.FailureType = failureType
+			report.Confidence = confidence
 			report.DiagnosedAt = time.Now()
 			return &report
 		}
@@ -102,14 +119,16 @@ Respond in JSON format with these fields:
 	return nil
 }
 
-func ruleBasedDiagnosis(failureType string, evidence []string) Report {
+func ruleBasedDiagnosis(failureType string, evidence []string, confidence float64) Report {
 	report := Report{
+		FailureType: failureType,
+		Confidence:  confidence,
 		Evidence:    evidence,
 		DiagnosedAt: time.Now(),
 	}
 
 	switch failureType {
-	case "gpu_oom":
+	case classifier.GPUOutOfMemory:
 		report.RootCause = "GPU Out of Memory (OOM) - The model or batch size exceeded available GPU memory"
 		report.RecommendedFix = `1. Reduce batch size in training configuration
 2. Enable gradient checkpointing to save memory
@@ -118,7 +137,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string) Report {
 5. Increase GPU memory by using larger AMD GPU instances`
 		report.SafeToRetry = false
 
-	case "missing_checkpoint":
+	case classifier.MissingCheckpoint:
 		report.RootCause = "Missing checkpoint file - The training job expected to resume from a checkpoint that doesn't exist"
 		report.RecommendedFix = `1. Verify checkpoint path in configuration
 2. Check if checkpoint was properly saved in previous run
@@ -126,7 +145,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string) Report {
 4. If starting fresh, remove checkpoint resume flag from config`
 		report.SafeToRetry = true
 
-	case "dependency_error":
+	case classifier.DependencyError:
 		report.RootCause = "Python dependency or import error - Required packages are missing or incompatible"
 		report.RecommendedFix = `1. Run 'pip install -r requirements.txt' to install dependencies
 2. Check Python version compatibility
@@ -135,7 +154,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string) Report {
 5. Use 'pip list' to verify installed packages`
 		report.SafeToRetry = true
 
-	case "data_path_error":
+	case classifier.DataPathError:
 		report.RootCause = "Data file or path not found - Training data is inaccessible"
 		report.RecommendedFix = `1. Verify data path in configuration file
 2. Check if data was downloaded/preprocessed correctly
@@ -144,7 +163,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string) Report {
 5. Check for typos in file paths`
 		report.SafeToRetry = true
 
-	case "timeout":
+	case classifier.Timeout:
 		report.RootCause = "Job timeout - The workload exceeded the maximum allowed runtime"
 		report.RecommendedFix = `1. Increase timeout limit in job configuration
 2. Optimize training loop for faster iterations
@@ -153,7 +172,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string) Report {
 5. Consider using faster AMD GPU instances`
 		report.SafeToRetry = true
 
-	case "rocm_error":
+	case classifier.ROCmError:
 		report.RootCause = "AMD ROCm runtime error - HIP/ROCm encountered a GPU-related error"
 		report.RecommendedFix = `1. Verify ROCm installation: 'rocm-smi' command
 2. Check ROCm version compatibility with PyTorch
@@ -163,7 +182,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string) Report {
 6. Review AMD GPU compatibility matrix`
 		report.SafeToRetry = true
 
-	case "gpu_driver_error":
+	case classifier.GPUDriverError:
 		report.RootCause = "GPU driver version mismatch or driver not available"
 		report.RecommendedFix = `1. Update AMD GPU drivers
 2. Verify ROCm is properly installed
