@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY}
+    volumes:
+      - ./backend:/app
+      - ./jobs:/jobs
+      - ./agents:/agents
+      - crashlens-data:/app/data
+    command: go run main.go
+    networks:
+      - crashlens-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8080
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+    depends_on:
+      - backend
+    networks:
+      - crashlens-network
+
+volumes:
+  crashlens-data:
+
+networks:
+  crashlens-network:
+    driver: bridge
