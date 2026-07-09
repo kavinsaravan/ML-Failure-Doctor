@@ -214,20 +214,6 @@ CREATE TABLE workloads (
 | `FIREWORKS_API_KEY` | Fireworks AI API key for Gemma model | No (falls back to rule-based) |
 | `PORT` | Backend server port | No (default: 8080) |
 
-## Development Roadmap
-
-- [x] Backend REST API with SQLite
-- [x] Rule-based failure classifier
-- [x] Fireworks AI Gemma integration
-- [x] MCP tool server foundation
-- [ ] Complete MCP server implementation
-- [ ] Python ML job runner with ROCm
-- [ ] Next.js dashboard UI
-- [ ] Agent observability demo
-- [ ] Docker deployment
-- [ ] S3 artifact storage
-- [ ] Real-time log streaming
-- [ ] GPU metrics visualization
 
 ## AMD ROCm Integration
 
