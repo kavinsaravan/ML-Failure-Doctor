@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"crashlens/backend/classifier"
-	"crashlens/backend/db"
-	"crashlens/backend/fireworks"
+	"crashlens/classifier"
+	"crashlens/db"
+	"crashlens/fireworks"
 )
 
 type Report struct {

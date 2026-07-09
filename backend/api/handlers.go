@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"crashlens/backend/db"
-	"crashlens/backend/diagnosis"
-	"crashlens/backend/fireworks"
-	"crashlens/backend/runner"
+	"crashlens/db"
+	"crashlens/diagnosis"
+	"crashlens/fireworks"
+	"crashlens/runner"
 
 	"github.com/gorilla/mux"
 )

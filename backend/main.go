@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"os"
 
-	"crashlens/backend/api"
-	"crashlens/backend/db"
-	"crashlens/backend/fireworks"
+	"crashlens/api"
+	"crashlens/db"
+	"crashlens/fireworks"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
