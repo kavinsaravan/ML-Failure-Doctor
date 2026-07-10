@@ -29,6 +29,36 @@ type Workload struct {
 	TraceEvents        *string    `json:"trace_events,omitempty"`
 }
 
+// AgentRun represents an observed agent execution
+type AgentRun struct {
+	ID               string     `json:"id"`
+	WorkloadID       string     `json:"workload_id"`
+	AgentName        string     `json:"agent_name"`
+	Task             string     `json:"task"`
+	Status           string     `json:"status"`
+	FailureType      *string    `json:"failure_type,omitempty"`
+	TotalToolCalls   int        `json:"total_tool_calls"`
+	TotalModelCalls  int        `json:"total_model_calls"`
+	TotalTokens      *int       `json:"total_tokens,omitempty"`
+	TotalLatencyMS   *int       `json:"total_latency_ms,omitempty"`
+	StartedAt        time.Time  `json:"started_at"`
+	FinishedAt       *time.Time `json:"finished_at,omitempty"`
+}
+
+// AgentStep represents a single step in an agent execution trace
+type AgentStep struct {
+	ID          string     `json:"id"`
+	AgentRunID  string     `json:"agent_run_id"`
+	StepIndex   int        `json:"step_index"`
+	StepType    string     `json:"step_type"` // TOOL_CALL, MODEL_CALL, DECISION, ERROR, FINAL_RESPONSE
+	Name        string     `json:"name"`
+	Input       *string    `json:"input,omitempty"`
+	Output      *string    `json:"output,omitempty"`
+	Status      string     `json:"status"`
+	LatencyMS   *int       `json:"latency_ms,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
 type DB struct {
 	*sql.DB
 }
@@ -68,6 +98,36 @@ func initSchema(db *sql.DB) error {
 		tool_calls TEXT,
 		model_calls TEXT,
 		trace_events TEXT
+	);
+
+	CREATE TABLE IF NOT EXISTS agent_runs (
+		id TEXT PRIMARY KEY,
+		workload_id TEXT NOT NULL,
+		agent_name TEXT NOT NULL,
+		task TEXT,
+		status TEXT NOT NULL,
+		failure_type TEXT,
+		total_tool_calls INTEGER DEFAULT 0,
+		total_model_calls INTEGER DEFAULT 0,
+		total_tokens INTEGER,
+		total_latency_ms INTEGER,
+		started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		finished_at TIMESTAMP,
+		FOREIGN KEY (workload_id) REFERENCES workloads(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS agent_steps (
+		id TEXT PRIMARY KEY,
+		agent_run_id TEXT NOT NULL,
+		step_index INTEGER NOT NULL,
+		step_type TEXT NOT NULL,
+		name TEXT NOT NULL,
+		input TEXT,
+		output TEXT,
+		status TEXT NOT NULL,
+		latency_ms INTEGER,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (agent_run_id) REFERENCES agent_runs(id)
 	);
 	`
 	_, err := db.Exec(schema)
@@ -181,4 +241,88 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 	stats["failure_types"] = failureTypes
 
 	return stats, nil
+}
+
+// Agent Run methods for observability
+func (db *DB) CreateAgentRun(run *AgentRun) error {
+	_, err := db.Exec(`
+		INSERT INTO agent_runs (id, workload_id, agent_name, task, status, failure_type, total_tool_calls, total_model_calls, total_tokens, total_latency_ms, started_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, run.ID, run.WorkloadID, run.AgentName, run.Task, run.Status, run.FailureType, run.TotalToolCalls, run.TotalModelCalls, run.TotalTokens, run.TotalLatencyMS, run.StartedAt, run.FinishedAt)
+	return err
+}
+
+func (db *DB) UpdateAgentRun(run *AgentRun) error {
+	_, err := db.Exec(`
+		UPDATE agent_runs SET status = ?, failure_type = ?, total_tool_calls = ?, total_model_calls = ?, total_tokens = ?, total_latency_ms = ?, finished_at = ?
+		WHERE id = ?
+	`, run.Status, run.FailureType, run.TotalToolCalls, run.TotalModelCalls, run.TotalTokens, run.TotalLatencyMS, run.FinishedAt, run.ID)
+	return err
+}
+
+func (db *DB) GetAgentRuns() ([]AgentRun, error) {
+	rows, err := db.Query(`SELECT id, workload_id, agent_name, task, status, failure_type, total_tool_calls, total_model_calls, total_tokens, total_latency_ms, started_at, finished_at FROM agent_runs ORDER BY started_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []AgentRun
+	for rows.Next() {
+		var run AgentRun
+		err := rows.Scan(&run.ID, &run.WorkloadID, &run.AgentName, &run.Task, &run.Status, &run.FailureType, &run.TotalToolCalls, &run.TotalModelCalls, &run.TotalTokens, &run.TotalLatencyMS, &run.StartedAt, &run.FinishedAt)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, nil
+}
+
+func (db *DB) GetAgentRun(id string) (*AgentRun, error) {
+	run := &AgentRun{}
+	err := db.QueryRow(`SELECT id, workload_id, agent_name, task, status, failure_type, total_tool_calls, total_model_calls, total_tokens, total_latency_ms, started_at, finished_at FROM agent_runs WHERE id = ?`, id).
+		Scan(&run.ID, &run.WorkloadID, &run.AgentName, &run.Task, &run.Status, &run.FailureType, &run.TotalToolCalls, &run.TotalModelCalls, &run.TotalTokens, &run.TotalLatencyMS, &run.StartedAt, &run.FinishedAt)
+	if err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
+func (db *DB) GetAgentRunByWorkloadID(workloadID int) (*AgentRun, error) {
+	run := &AgentRun{}
+	err := db.QueryRow(`SELECT id, workload_id, agent_name, task, status, failure_type, total_tool_calls, total_model_calls, total_tokens, total_latency_ms, started_at, finished_at FROM agent_runs WHERE workload_id = ?`, workloadID).
+		Scan(&run.ID, &run.WorkloadID, &run.AgentName, &run.Task, &run.Status, &run.FailureType, &run.TotalToolCalls, &run.TotalModelCalls, &run.TotalTokens, &run.TotalLatencyMS, &run.StartedAt, &run.FinishedAt)
+	if err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
+// Agent Step methods
+func (db *DB) CreateAgentStep(step *AgentStep) error {
+	_, err := db.Exec(`
+		INSERT INTO agent_steps (id, agent_run_id, step_index, step_type, name, input, output, status, latency_ms, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, step.ID, step.AgentRunID, step.StepIndex, step.StepType, step.Name, step.Input, step.Output, step.Status, step.LatencyMS, step.CreatedAt)
+	return err
+}
+
+func (db *DB) GetAgentSteps(agentRunID string) ([]AgentStep, error) {
+	rows, err := db.Query(`SELECT id, agent_run_id, step_index, step_type, name, input, output, status, latency_ms, created_at FROM agent_steps WHERE agent_run_id = ? ORDER BY step_index ASC`, agentRunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var steps []AgentStep
+	for rows.Next() {
+		var step AgentStep
+		err := rows.Scan(&step.ID, &step.AgentRunID, &step.StepIndex, &step.StepType, &step.Name, &step.Input, &step.Output, &step.Status, &step.LatencyMS, &step.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, step)
+	}
+	return steps, nil
 }
