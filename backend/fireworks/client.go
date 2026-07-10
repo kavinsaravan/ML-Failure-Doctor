@@ -241,6 +241,107 @@ Provide:
 	return &result, nil
 }
 
+// DiagnoseAgentFailure uses function-calling to diagnose agent execution failures
+func (c *Client) DiagnoseAgentFailure(prompt string) (string, error) {
+	if c == nil {
+		return "", nil
+	}
+
+	// Define the function schema for agent diagnosis
+	agentDiagnosisFunction := Tool{
+		Type: "function",
+		Function: Function{
+			Name:        "diagnose_agent_failure",
+			Description: "Diagnose autonomous agent failure and provide structured analysis",
+			Parameters: FunctionParameter{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"root_cause": {
+						Type:        "string",
+						Description: "Concise explanation of why the agent failed",
+					},
+					"evidence": {
+						Type:        "array",
+						Description: "List of evidence from tool calls, model calls, and execution trace",
+						Items: &PropertySchema{
+							Type: "string",
+						},
+					},
+					"recommended_fixes": {
+						Type:        "array",
+						Description: "List of specific fixes for the agent implementation",
+						Items: &PropertySchema{
+							Type: "string",
+						},
+					},
+					"prevention": {
+						Type:        "string",
+						Description: "Advice on how to prevent this agent failure pattern",
+					},
+				},
+				Required: []string{"root_cause", "evidence", "recommended_fixes", "prevention"},
+			},
+		},
+	}
+
+	messages := []Message{
+		{Role: "user", Content: prompt},
+	}
+
+	reqBody := Request{
+		Model:      c.Model,
+		Messages:   messages,
+		MaxTokens:  2000,
+		Tools:      []Tool{agentDiagnosisFunction},
+		ToolChoice: &ToolChoice{
+			Type: "function",
+			Function: FunctionCallChoice{
+				Name: "diagnose_agent_failure",
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", c.BaseURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var fireworksResp Response
+	if err := json.Unmarshal(body, &fireworksResp); err != nil {
+		return "", err
+	}
+
+	if len(fireworksResp.Choices) == 0 || len(fireworksResp.Choices[0].Message.ToolCalls) == 0 {
+		return "", nil
+	}
+
+	// Return the function call arguments as JSON string
+	return fireworksResp.Choices[0].Message.ToolCalls[0].Function.Arguments, nil
+}
+
 // Legacy method for backward compatibility
 func (c *Client) ChatCompletion(messages []Message) (string, error) {
 	if c == nil {

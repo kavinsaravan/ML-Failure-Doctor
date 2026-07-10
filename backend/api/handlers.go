@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"crashlens/agent_diagnosis"
 	"crashlens/db"
 	"crashlens/diagnosis"
 	"crashlens/fireworks"
@@ -327,4 +328,148 @@ func (s *Server) CreateAgentStepHandler(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(agentStep)
+}
+
+// Agent Diagnosis Handler
+func (s *Server) DiagnoseAgentRunHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	// Get agent run
+	agentRun, err := s.DB.GetAgentRun(id)
+	if err != nil {
+		http.Error(w, "Agent run not found", http.StatusNotFound)
+		return
+	}
+
+	// Get agent steps
+	steps, err := s.DB.GetAgentSteps(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Classify failure if not already classified
+	failureType := agentRun.FailureType
+	var failureMessage string
+
+	if failureType == nil || *failureType == "" {
+		detectedType, message := agent_diagnosis.ClassifyAgentFailure(steps)
+		failureType = &detectedType
+		failureMessage = message
+	}
+
+	// Build diagnosis input
+	diagnosisInput := agent_diagnosis.DiagnosisInput{
+		AgentName:       agentRun.AgentName,
+		Task:            agentRun.Task,
+		FailureType:     *failureType,
+		Steps:           steps,
+		TotalToolCalls:  agentRun.TotalToolCalls,
+		TotalModelCalls: agentRun.TotalModelCalls,
+	}
+
+	if agentRun.TotalTokens != nil {
+		diagnosisInput.TotalTokens = *agentRun.TotalTokens
+	}
+	if agentRun.TotalLatencyMS != nil {
+		diagnosisInput.TotalLatencyMS = *agentRun.TotalLatencyMS
+	}
+
+	// Generate diagnosis report
+	var report interface{}
+
+	if s.FWClient != nil {
+		// Use Gemma for AI-powered diagnosis
+		prompt := agent_diagnosis.BuildAgentDiagnosisPrompt(diagnosisInput)
+
+		// Call Fireworks AI for agent diagnosis
+		response, err := s.FWClient.DiagnoseAgentFailure(prompt)
+		if err == nil && response != "" {
+			parsedReport, parseErr := agent_diagnosis.ParseDiagnosisResponse(response)
+			if parseErr == nil {
+				report = parsedReport
+			} else {
+				// Fallback to raw response if parsing fails
+				report = map[string]interface{}{
+					"root_cause":        "AI diagnosis completed",
+					"raw_response":      response,
+					"parse_error":       parseErr.Error(),
+				}
+			}
+		} else {
+			// Fireworks call failed, use rule-based fallback
+			report = buildRuleBasedAgentDiagnosis(diagnosisInput, failureMessage)
+		}
+	} else {
+		// No Fireworks client, use rule-based diagnosis
+		report = buildRuleBasedAgentDiagnosis(diagnosisInput, failureMessage)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(report)
+}
+
+// buildRuleBasedAgentDiagnosis creates a diagnosis report without AI
+func buildRuleBasedAgentDiagnosis(input agent_diagnosis.DiagnosisInput, failureMessage string) map[string]interface{} {
+	var evidence []string
+	var fixes []string
+	var prevention string
+
+	switch input.FailureType {
+	case "AGENT_LOOP":
+		evidence = []string{
+			"Multiple identical tool calls detected",
+			failureMessage,
+		}
+		fixes = []string{
+			"Add max-iteration limit to prevent infinite loops",
+			"Deduplicate repeated tool calls with same input",
+			"Implement loop detection in agent framework",
+		}
+		prevention = "Track previous tool inputs and block repeated calls with identical arguments within a sliding window."
+
+	case "TOOL_CALL_FAILURE":
+		evidence = []string{
+			"One or more tool calls failed",
+			failureMessage,
+		}
+		fixes = []string{
+			"Verify tool inputs before calling",
+			"Add error handling and retry logic",
+			"Check resource availability (files, APIs, etc.)",
+		}
+		prevention = "Validate tool prerequisites and add graceful error handling with informative error messages."
+
+	case "MODEL_TIMEOUT":
+		evidence = []string{
+			"Model call exceeded latency threshold",
+			failureMessage,
+		}
+		fixes = []string{
+			"Reduce prompt size or complexity",
+			"Use a faster model or deployment",
+			"Implement timeout handling and fallbacks",
+		}
+		prevention = "Set reasonable timeout thresholds and implement fallback strategies for slow model responses."
+
+	default:
+		evidence = []string{
+			"Agent failed with unknown cause",
+			failureMessage,
+		}
+		fixes = []string{
+			"Review agent execution trace",
+			"Check for unexpected errors in steps",
+		}
+		prevention = "Add comprehensive error logging and monitoring."
+	}
+
+	return map[string]interface{}{
+		"root_cause":        input.FailureType + " detected",
+		"evidence":          evidence,
+		"recommended_fixes": fixes,
+		"prevention":        prevention,
+		"failure_message":   failureMessage,
+	}
 }

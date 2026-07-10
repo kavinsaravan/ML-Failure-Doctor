@@ -55,6 +55,7 @@ func main() {
 	r.HandleFunc("/agent-runs/{id}", server.GetAgentRunHandler).Methods("GET")
 	r.HandleFunc("/agent-runs/{id}", server.UpdateAgentRunHandler).Methods("PUT")
 	r.HandleFunc("/agent-runs/{id}/steps", server.GetAgentRunStepsHandler).Methods("GET")
+	r.HandleFunc("/agent-runs/{id}/diagnose", server.DiagnoseAgentRunHandler).Methods("POST")
 	r.HandleFunc("/agent-steps", server.CreateAgentStepHandler).Methods("POST")
 
 	// CORS
