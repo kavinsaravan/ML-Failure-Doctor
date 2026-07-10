@@ -40,6 +40,7 @@ func main() {
 
 	// API routes
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
+	r.HandleFunc("/workloads", server.CreateWorkloadHandler).Methods("POST")
 	r.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}", server.GetWorkloadHandler).Methods("GET")
 	r.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
@@ -47,6 +48,14 @@ func main() {
 	r.HandleFunc("/workloads/{id}/metrics", server.GetWorkloadMetricsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 	r.HandleFunc("/summary", server.GetSummaryHandler).Methods("GET")
+
+	// Agent Observability routes
+	r.HandleFunc("/agent-runs", server.CreateAgentRunHandler).Methods("POST")
+	r.HandleFunc("/agent-runs", server.GetAgentRunsHandler).Methods("GET")
+	r.HandleFunc("/agent-runs/{id}", server.GetAgentRunHandler).Methods("GET")
+	r.HandleFunc("/agent-runs/{id}", server.UpdateAgentRunHandler).Methods("PUT")
+	r.HandleFunc("/agent-runs/{id}/steps", server.GetAgentRunStepsHandler).Methods("GET")
+	r.HandleFunc("/agent-steps", server.CreateAgentStepHandler).Methods("POST")
 
 	// CORS
 	handler := cors.New(cors.Options{

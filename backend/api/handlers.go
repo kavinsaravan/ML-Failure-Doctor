@@ -21,6 +21,43 @@ func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name   string `json:"name"`
+		Type   string `json:"type"`
+		Status string `json:"status"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Set defaults
+	if req.Type == "" {
+		req.Type = "ML_JOB"
+	}
+	if req.Status == "" {
+		req.Status = "pending"
+	}
+
+	// Create workload
+	id, err := s.DB.CreateWorkload(req.Name, req.Type, req.Status)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":     id,
+		"name":   req.Name,
+		"type":   req.Type,
+		"status": req.Status,
+	})
+}
+
 func (s *Server) GetWorkloadsHandler(w http.ResponseWriter, r *http.Request) {
 	workloads, err := s.DB.GetWorkloads()
 	if err != nil {
@@ -195,4 +232,99 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(report)
+}
+
+// Agent Run Handlers
+func (s *Server) CreateAgentRunHandler(w http.ResponseWriter, r *http.Request) {
+	var agentRun db.AgentRun
+	if err := json.NewDecoder(r.Body).Decode(&agentRun); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.DB.CreateAgentRun(&agentRun); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(agentRun)
+}
+
+func (s *Server) UpdateAgentRunHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var agentRun db.AgentRun
+	if err := json.NewDecoder(r.Body).Decode(&agentRun); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	agentRun.ID = id
+	if err := s.DB.UpdateAgentRun(&agentRun); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(agentRun)
+}
+
+func (s *Server) GetAgentRunsHandler(w http.ResponseWriter, r *http.Request) {
+	agentRuns, err := s.DB.GetAgentRuns()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(agentRuns)
+}
+
+func (s *Server) GetAgentRunHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	agentRun, err := s.DB.GetAgentRun(id)
+	if err != nil {
+		http.Error(w, "Agent run not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(agentRun)
+}
+
+func (s *Server) GetAgentRunStepsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	agentRunID := vars["id"]
+
+	steps, err := s.DB.GetAgentSteps(agentRunID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(steps)
+}
+
+// Agent Step Handlers
+func (s *Server) CreateAgentStepHandler(w http.ResponseWriter, r *http.Request) {
+	var agentStep db.AgentStep
+	if err := json.NewDecoder(r.Body).Decode(&agentStep); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.DB.CreateAgentStep(&agentStep); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(agentStep)
 }
