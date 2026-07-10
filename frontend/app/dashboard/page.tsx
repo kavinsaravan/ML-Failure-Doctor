@@ -103,8 +103,25 @@ export default function Dashboard() {
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">CrashLens Dashboard</h1>
-          <p className="text-slate-400">Monitor and diagnose ML workloads and AI agents</p>
+          <div className="flex items-center gap-3 mb-3">
+            <h1 className="text-4xl font-bold text-white">CrashLens Dashboard</h1>
+            <span className="px-3 py-1 bg-red-600 text-white text-sm font-semibold rounded">AMD ROCm</span>
+          </div>
+          <p className="text-slate-400">Monitor and diagnose ML workloads and AI agents on AMD GPUs</p>
+          <div className="flex items-center gap-6 mt-3 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Platform:</span>
+              <span className="text-white font-medium">AMD ROCm 5.7+</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Worker Type:</span>
+              <span className="text-white font-medium">AMD GPU Worker</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Metric Source:</span>
+              <span className="text-white font-medium">rocm-smi compatible</span>
+            </div>
+          </div>
         </div>
 
         {/* Navigation Tabs */}

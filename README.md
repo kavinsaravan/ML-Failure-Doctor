@@ -50,6 +50,26 @@ Gemma AI (via Fireworks AI)
 Next.js Dashboard
 ```
 
+## AMD ROCm Support
+
+**CrashLens is designed for ROCm-based workloads** and provides first-class support for AMD GPU infrastructure:
+
+- **HIP-style OOM Errors**: Detects and diagnoses `HIP out of memory` errors specific to AMD ROCm runtime
+- **AMD GPU Metrics**: Collects memory, utilization, and temperature data via `rocm-smi` compatible interface
+- **ROCm 5.7+ Compatible**: Tested with AMD ROCm 5.7+ runtime environment
+- **AMD Developer Cloud Ready**: Architecture supports deployment on AMD Developer Cloud infrastructure
+- **Pluggable Metric Collector**:
+  ```go
+  // Backend automatically detects ROCm availability
+  if ROCmAvailable() {
+      collector = NewROCmSMICollector()  // Real rocm-smi metrics
+  } else {
+      collector = NewSimulatedCollector()  // Demo metrics for development
+  }
+  ```
+
+The platform seamlessly switches between real `rocm-smi` metrics (when ROCm is available) and simulated metrics (for local development), making it easy to demo on any hardware while being production-ready for AMD GPU clusters.
+
 ## Tech Stack
 
 | Component | Technology |

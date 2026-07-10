@@ -195,10 +195,21 @@ export default function WorkloadDetail() {
           </Link>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-white mb-2">{workload.name}</h1>
+              <div className="flex items-center gap-3 mb-2">
+                <h1 className="text-4xl font-bold text-white">{workload.name}</h1>
+                <span className="px-2 py-1 bg-red-600 text-white text-xs font-semibold rounded">AMD ROCm</span>
+              </div>
               <p className="text-slate-400">
                 {workload.type} • Created {new Date(workload.created_at).toLocaleString()}
               </p>
+              {workload.status === 'failed' && workload.failure_type && (
+                <div className="mt-2 flex items-center gap-2 text-sm">
+                  <span className="text-slate-500">Failure Signal:</span>
+                  <span className="text-red-400 font-medium">
+                    {workload.failure_type === 'GPU_OUT_OF_MEMORY' ? 'HIP out-of-memory' : workload.failure_type.replace(/_/g, ' ')}
+                  </span>
+                </div>
+              )}
             </div>
             {workload.status === 'failed' && !diagnosis && (
               <button
