@@ -104,7 +104,19 @@ export default function Dashboard() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">CrashLens Dashboard</h1>
-          <p className="text-slate-400">Monitor and diagnose ML workloads on AMD GPUs</p>
+          <p className="text-slate-400">Monitor and diagnose ML workloads and AI agents</p>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="mb-6 border-b border-slate-700">
+          <div className="flex gap-8">
+            <div className="pb-4 border-b-2 border-blue-500 text-blue-400 font-medium">
+              ML Jobs
+            </div>
+            <Link href="/agent-runs" className="pb-4 text-slate-400 hover:text-white transition-colors">
+              Agent Runs
+            </Link>
+          </div>
         </div>
 
         {/* Stats Cards */}
