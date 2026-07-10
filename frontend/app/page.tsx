@@ -21,14 +21,6 @@ export default function Home() {
               Go to Dashboard
               <ArrowRight className="w-5 h-5" />
             </Link>
-            <a
-              href="https://github.com/kavinsaravan/ML-Failure-Doctor"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-8 py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition-colors"
-            >
-              View on GitHub
-            </a>
           </div>
         </div>
 
