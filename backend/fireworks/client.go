@@ -85,6 +85,7 @@ type DiagnosisResult struct {
 type Client struct {
 	APIKey  string
 	BaseURL string
+	Model   string
 	Client  *http.Client
 }
 
@@ -94,9 +95,16 @@ func NewClient() *Client {
 		return nil
 	}
 
+	// Use environment variable for model, fallback to deployment
+	model := os.Getenv("FIREWORKS_MODEL")
+	if model == "" {
+		model = "accounts/kavinsaravan-hhm94d1/deployments/gas0qxbe"
+	}
+
 	return &Client{
 		APIKey:  apiKey,
 		BaseURL: "https://api.fireworks.ai/inference/v1/chat/completions",
+		Model:   model,
 		Client:  &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -169,7 +177,7 @@ Provide:
 	}
 
 	reqBody := Request{
-		Model:      "accounts/kavinsaravan-hhm94d1/deployments/gas0qxbe",
+		Model:      c.Model,
 		Messages:   messages,
 		MaxTokens:  2000,
 		Tools:      []Tool{diagnosisFunction},
@@ -240,7 +248,7 @@ func (c *Client) ChatCompletion(messages []Message) (string, error) {
 	}
 
 	reqBody := Request{
-		Model:     "accounts/kavinsaravan-hhm94d1/deployments/gas0qxbe",
+		Model:     c.Model,
 		Messages:  messages,
 		MaxTokens: 1000,
 	}
