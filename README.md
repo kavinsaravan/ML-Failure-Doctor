@@ -24,11 +24,15 @@ Built for the [AMD Developer Hackathon Act II](https://lablab.ai/ai-hackathons/a
 
 ### MCP Tool Layer
 Exposes diagnostic capabilities through Model Context Protocol (MCP):
-- `get_job_logs` - Retrieve workload logs
-- `get_gpu_metrics` - Access GPU performance metrics
-- `get_failure_report` - Get AI diagnosis reports
-- `get_agent_trace` - View agent execution traces
-- `list_failed_workloads` - Query failed workloads
+- `get_workload_logs` - Retrieve workload execution logs
+- `get_gpu_metrics` - Access GPU memory, utilization, and temperature metrics
+- `get_failure_report` - Get AI-generated diagnosis reports
+- `get_checkpoint_state` - View checkpoint paths and availability
+- `get_wasted_gpu_time` - Calculate cost impact of failures
+- `list_failed_workloads` - Query failed workloads with filters
+- `get_workload_summary` - Get comprehensive workload metadata
+
+See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifications.
 
 ## Architecture
 
