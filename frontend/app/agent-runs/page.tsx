@@ -89,7 +89,7 @@ export default function AgentRunsPage() {
         {/* Navigation Tabs */}
         <div className="mb-6 border-b border-gray-200">
           <div className="flex gap-8">
-            <Link href="/" className="pb-4 text-gray-500 hover:text-gray-700">
+            <Link href="/dashboard" className="pb-4 text-gray-500 hover:text-gray-700">
               ML Jobs
             </Link>
             <div className="pb-4 border-b-2 border-blue-600 text-blue-600 font-medium">
