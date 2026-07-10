@@ -169,7 +169,7 @@ Provide:
 	}
 
 	reqBody := Request{
-		Model:      "accounts/fireworks/models/gemma-4-26b-a4b-it",
+		Model:      "accounts/kavinsaravan-hhm94d1/deployments/gas0qxbe",
 		Messages:   messages,
 		MaxTokens:  2000,
 		Tools:      []Tool{diagnosisFunction},
@@ -240,7 +240,7 @@ func (c *Client) ChatCompletion(messages []Message) (string, error) {
 	}
 
 	reqBody := Request{
-		Model:     "accounts/fireworks/models/gemma-4-26b-a4b-it",
+		Model:     "accounts/kavinsaravan-hhm94d1/deployments/gas0qxbe",
 		Messages:  messages,
 		MaxTokens: 1000,
 	}
