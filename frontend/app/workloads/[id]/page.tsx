@@ -265,6 +265,49 @@ export default function WorkloadDetail() {
               AI Diagnosis Report
             </h2>
 
+            {/* AI Doctor Architecture Panel */}
+            <div className="bg-slate-900/50 border border-blue-500/30 rounded-lg p-6 mb-6">
+              <div className="text-sm font-semibold text-blue-400 mb-3 uppercase tracking-wide">
+                AI Doctor Architecture
+              </div>
+              <div className="grid md:grid-cols-3 gap-4 mb-4">
+                <div className="text-center">
+                  <div className="text-xs text-slate-400 mb-1">Diagnosis Model</div>
+                  <div className="text-sm font-medium text-white">Gemma via Fireworks AI</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-slate-400 mb-1">Tool Access</div>
+                  <div className="text-sm font-medium text-white">MCP (Model Context Protocol)</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-slate-400 mb-1">Evidence Source</div>
+                  <div className="text-sm font-medium text-white">Logs + GPU Metrics + Traces</div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-700 pt-4 mt-4">
+                <div className="text-xs font-semibold text-slate-400 mb-2">Execution Trace:</div>
+                <div className="space-y-2 text-xs text-slate-300">
+                  <div className="flex items-start gap-2">
+                    <span className="text-green-400 mt-0.5">✓</span>
+                    <span>Retrieved workload logs through MCP tool</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-green-400 mt-0.5">✓</span>
+                    <span>Retrieved GPU metrics through MCP tool</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-green-400 mt-0.5">✓</span>
+                    <span>Retrieved failure report through MCP tool</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-blue-400 mt-0.5">🤖</span>
+                    <span>Generated Gemma diagnosis through Fireworks AI</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Failure Type & Confidence - Prominent Display */}
             <div className="bg-slate-900 rounded-lg p-6 mb-6 border border-slate-700">
               <div className="grid md:grid-cols-2 gap-6">
