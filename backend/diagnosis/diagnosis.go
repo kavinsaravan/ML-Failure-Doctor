@@ -1,8 +1,6 @@
 package diagnosis
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -66,57 +64,51 @@ func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
 }
 
 func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType string, evidence []string, confidence float64) *Report {
-	context := fmt.Sprintf(`You are an AI expert in ML infrastructure and AMD ROCm GPU debugging.
-
-Workload Information:
+	// Build comprehensive workload data for AI diagnosis
+	workloadData := fmt.Sprintf(`Workload Information:
 - Name: %s
 - Type: %s
 - Status: %s
 - Failure Type (detected): %s
+- Runtime: %v seconds
+`, workload.Name, workload.Type, workload.Status, failureType, workload.RuntimeSeconds)
 
-Logs Evidence:
-%s
+	// Add logs evidence
+	if workload.JobLogs != nil {
+		workloadData += fmt.Sprintf("\nJob Logs:\n%s\n", *workload.JobLogs)
+	}
 
-Task: Provide a structured diagnosis of this failure.
-
-Respond in JSON format with these fields:
-{
-  "root_cause": "Brief description of the root cause",
-  "evidence": ["list", "of", "key", "evidence", "lines"],
-  "recommended_fix": "Specific actionable steps to fix this issue",
-  "safe_to_retry": true/false
-}
-`, workload.Name, workload.Type, workload.Status, failureType, formatEvidence(evidence))
-
+	// Add GPU metrics
 	if workload.GPUMetrics != nil {
-		context += fmt.Sprintf("\nGPU Metrics:\n%s\n", *workload.GPUMetrics)
+		workloadData += fmt.Sprintf("\nGPU Metrics:\n%s\n", *workload.GPUMetrics)
 	}
 
-	messages := []fireworks.Message{
-		{Role: "user", Content: context},
-	}
-
-	response, err := fwClient.ChatCompletion(messages)
-	if err != nil || response == "" {
+	// Call Fireworks AI with function-calling for structured output
+	result, err := fwClient.DiagnoseFailure(workloadData)
+	if err != nil || result == nil {
 		return nil
 	}
 
-	// Try to extract JSON from response
-	var report Report
-	jsonStart := bytes.Index([]byte(response), []byte("{"))
-	jsonEnd := bytes.LastIndex([]byte(response), []byte("}"))
-
-	if jsonStart >= 0 && jsonEnd > jsonStart {
-		jsonStr := response[jsonStart : jsonEnd+1]
-		if err := json.Unmarshal([]byte(jsonStr), &report); err == nil {
-			report.FailureType = failureType
-			report.Confidence = confidence
-			report.DiagnosedAt = time.Now()
-			return &report
-		}
+	// Convert DiagnosisResult to Report format
+	report := Report{
+		FailureType:    failureType,
+		Confidence:     confidence,
+		RootCause:      result.RootCause,
+		Evidence:       result.Evidence,
+		RecommendedFix: formatRecommendedFixes(result.RecommendedFixes),
+		SafeToRetry:    result.SafeToRetry,
+		DiagnosedAt:    time.Now(),
 	}
 
-	return nil
+	return &report
+}
+
+func formatRecommendedFixes(fixes []string) string {
+	result := ""
+	for i, fix := range fixes {
+		result += fmt.Sprintf("%d. %s\n", i+1, fix)
+	}
+	return result
 }
 
 func ruleBasedDiagnosis(failureType string, evidence []string, confidence float64) Report {
