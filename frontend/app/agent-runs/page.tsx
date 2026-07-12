@@ -31,7 +31,11 @@ export default function AgentRunsPage() {
 
   const fetchAgentRuns = async () => {
     try {
-      const response = await fetch(`${API_URL}/agent-runs`);
+      const response = await fetch(`${API_URL}/agent-runs`, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+        },
+      });
       const data = await response.json();
       setAgentRuns(data || []);
     } catch (error) {

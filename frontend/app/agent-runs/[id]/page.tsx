@@ -53,9 +53,10 @@ export default function AgentTracePage() {
 
   const fetchAgentTrace = async () => {
     try {
+      const headers = { 'ngrok-skip-browser-warning': 'true' };
       const [runResponse, stepsResponse] = await Promise.all([
-        fetch(`${API_URL}/agent-runs/${id}`),
-        fetch(`${API_URL}/agent-runs/${id}/steps`),
+        fetch(`${API_URL}/agent-runs/${id}`, { headers }),
+        fetch(`${API_URL}/agent-runs/${id}/steps`, { headers }),
       ]);
 
       const runData = await runResponse.json();
@@ -77,6 +78,9 @@ export default function AgentTracePage() {
         `${API_URL}/agent-runs/${id}/diagnose`,
         {
           method: "POST",
+          headers: {
+            'ngrok-skip-browser-warning': 'true',
+          },
         }
       );
       const data = await response.json();
