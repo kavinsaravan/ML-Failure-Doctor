@@ -1,130 +1,166 @@
-# CrashLens - AI Reliability Platform for AMD GPU Workloads
+# 🔍 CrashLens - AI-Powered Reliability Platform for AMD GPUs
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![AMD ROCm](https://img.shields.io/badge/AMD-ROCm-red.svg)
+![AMD ROCm](https://img.shields.io/badge/AMD-ROCm%205.7%2B-red.svg)
 ![Go](https://img.shields.io/badge/Go-1.22-00ADD8.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)
 
-**CrashLens** is an AI-powered reliability platform designed for AMD GPU workloads. It provides intelligent failure diagnosis for ML training/inference jobs and extends into agent observability by tracking tool calls, model calls, latency, and failure traces.
+**CrashLens** is an intelligent failure diagnosis and observability platform designed specifically for **AMD GPU workloads**. It combines real-time GPU metrics from `rocm-smi`, AI-powered root cause analysis, and comprehensive observability for both ML training jobs and AI agent executions.
 
-Built for the [AMD Developer Hackathon Act II](https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii) - Track 3: AI Agent Observability & Reliability.
+> Built for the [AMD Developer Hackathon Act II](https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii) - **Track 3: Unicorn Track**
 
-## Core Features
+---
 
-### ML Job Failure Diagnosis
-- **Automatic Failure Classification**: GPU OOM, missing checkpoint, dependency errors, data path errors, timeouts, ROCm errors
-- **AI-Powered Doctor**: Gemma-powered diagnosis via Fireworks AI providing root cause analysis, evidence extraction, and recommended fixes
-- **AMD ROCm Support**: Native support for HIP/ROCm-style GPU failure logs and rocm-smi metrics
-- **GPU Cost Tracking**: Calculates wasted GPU-seconds on failed jobs
+## 🎯 Why CrashLens?
 
-### Agent Observability (MVP)
-- **Agent Run Traces**: Track tool calls, model calls, and execution steps
-- **Failure Detection**: Identify tool-call failures and infinite loops
-- **Unified Dashboard**: Same diagnosis format for both ML jobs and agent runs
+**The Problem:** ML engineers spend hours debugging GPU failures—deciphering cryptic HIP errors, analyzing memory dumps, and manually correlating logs with metrics.
 
-### MCP Tool Layer
-Exposes diagnostic capabilities through Model Context Protocol (MCP):
-- `get_workload_logs` - Retrieve workload execution logs
-- `get_gpu_metrics` - Access GPU memory, utilization, and temperature metrics
+**The Solution:** CrashLens diagnoses GPU workload failures in **seconds**, not hours:
+- 🤖 **AI-Powered Diagnosis** - Gemma model analyzes logs and provides actionable fixes
+- 📊 **Real-time AMD GPU Metrics** - Native `rocm-smi` integration for memory, utilization, and temperature
+- 🔬 **Agent Observability** - Track tool calls, model interactions, and execution traces
+- 💰 **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
+- 🐳 **Production-Ready** - Fully containerized with Docker
+
+---
+
+## ✨ Key Features
+
+### 🎯 GPU Workload Diagnosis
+- **Automatic Failure Classification**: GPU OOM, missing checkpoints, dependency errors, data path errors, timeouts, ROCm runtime errors
+- **AI-Powered Doctor**: Gemma-powered diagnosis via Fireworks AI providing:
+  - Root cause analysis
+  - Evidence extraction from logs
+  - Recommended fixes with retry safety assessment
+  - Prevention strategies
+- **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring via `rocm-smi`
+- **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
+
+### 🤖 AI Agent Observability
+- **Execution Traces**: Visual timeline of tool calls, model calls, and decision points
+- **Performance Metrics**: Track latency, token usage, and model call patterns
+- **Failure Detection**: Identify infinite loops, API errors, and reasoning failures
+- **Unified Dashboard**: Same diagnostic interface for both GPU jobs and agent runs
+
+### 🔧 Model Context Protocol (MCP) Integration
+CrashLens exposes diagnostic capabilities through standardized MCP tools:
+- `get_workload_logs` - Retrieve execution logs and error traces
+- `get_gpu_metrics` - Access GPU memory, utilization, temperature data
 - `get_failure_report` - Get AI-generated diagnosis reports
-- `get_checkpoint_state` - View checkpoint paths and availability
-- `get_wasted_gpu_time` - Calculate cost impact of failures
+- `get_checkpoint_state` - View checkpoint availability
+- `get_wasted_gpu_time` - Calculate failure cost impact
 - `list_failed_workloads` - Query failed workloads with filters
-- `get_workload_summary` - Get comprehensive workload metadata
 
 See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifications.
 
-## Architecture
+---
 
-```
-ML Job / Agent Run
-        ↓
-Log + Metric + Trace Collector
-        ↓
-Rule-Based Failure Classifier
-        ↓
-MCP Tool Server
-        ↓
-Gemma AI (via Fireworks AI)
-        ↓
-Next.js Dashboard
-```
+## 🚀 AMD ROCm Platform Integration
 
-## AMD ROCm Support
+**CrashLens is purpose-built for AMD GPU infrastructure** with deep ROCm ecosystem integration:
 
-**CrashLens is designed for ROCm-based workloads** and provides first-class support for AMD GPU infrastructure:
+### Native AMD Support
+- ✅ **HIP Error Detection** - Recognizes and diagnoses HIP out-of-memory and runtime errors
+- ✅ **rocm-smi Metrics** - Real-time GPU metrics via AMD's `rocm-smi` utility
+- ✅ **ROCm 5.7+ Compatible** - Tested with latest AMD ROCm runtime
+- ✅ **AMD Developer Cloud Ready** - Designed for deployment on AMD infrastructure
+- ✅ **Intelligent Fallback** - Seamless switch between real rocm-smi and simulated metrics for development
 
-- **HIP-style OOM Errors**: Detects and diagnoses `HIP out of memory` errors specific to AMD ROCm runtime
-- **AMD GPU Metrics**: Collects memory, utilization, and temperature data via `rocm-smi` compatible interface
-- **ROCm 5.7+ Compatible**: Tested with AMD ROCm 5.7+ runtime environment
-- **AMD Developer Cloud Ready**: Architecture supports deployment on AMD Developer Cloud infrastructure
-- **Pluggable Metric Collector**:
-  ```go
-  // Backend automatically detects ROCm availability
-  if ROCmAvailable() {
-      collector = NewROCmSMICollector()  // Real rocm-smi metrics
-  } else {
-      collector = NewSimulatedCollector()  // Demo metrics for development
-  }
-  ```
-
-The platform seamlessly switches between real `rocm-smi` metrics (when ROCm is available) and simulated metrics (for local development), making it easy to demo on any hardware while being production-ready for AMD GPU clusters.
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|-----------|
-| **Frontend** | Next.js 16, React, TypeScript, Tailwind CSS, Recharts |
-| **Backend** | Go 1.22, Gorilla Mux (REST API) |
-| **Database** | SQLite |
-| **AI Model** | Gemma via Fireworks AI |
-| **GPU Platform** | AMD ROCm / AMD Developer Cloud |
-| **Tool Layer** | Model Context Protocol (MCP) |
-| **ML Scripts** | Python with PyTorch (ROCm) |
-
-## Project Structure
-
-```
-ML-Failure-Doctor/
-├── backend/              # Go REST API server
-│   ├── main.go          # Server setup, routes, database
-│   ├── classifier.go    # Rule-based failure classification
-│   ├── diagnosis.go     # AI diagnosis with Fireworks AI
-│   └── go.mod           # Go dependencies
-├── frontend/            # Next.js dashboard
-│   ├── app/            # App router pages
-│   ├── components/     # React components
-│   └── package.json    # Node dependencies
-├── mcp-server/         # MCP tool server
-│   ├── server.js       # MCP tool implementations
-│   └── package.json    # MCP SDK dependencies
-├── scripts/            # Python ML job runners
-│   └── [training scripts with ROCm support]
-└── docs/              # Documentation
+### AMD-Specific Features
+```go
+// Automatic AMD GPU detection and metric collection
+if ROCmAvailable() {
+    collector = NewROCmSMICollector()  // Native rocm-smi integration
+} else {
+    collector = NewSimulatedCollector()  // Development fallback
+}
 ```
 
-## Quick Start
+### ROCm Error Patterns Detected
+- `HIP out of memory` errors
+- ROCm runtime failures
+- GPU driver version mismatches
+- AMD GPU utilization bottlenecks
+- Memory bandwidth saturation
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     GPU Workload / Agent Run                │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│           Log + Metric + Trace Collector                    │
+│           (rocm-smi + Python + Agent Traces)                │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│          Rule-Based Failure Classifier                      │
+│          (Pattern matching + Error detection)               │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│               MCP Tool Server                               │
+│          (Standardized diagnostic tools)                    │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│            Gemma AI (via Fireworks AI)                      │
+│        (Root cause + Fixes + Prevention)                    │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Next.js Dashboard                              │
+│         (Real-time monitoring + Diagnosis UI)               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Frontend** | Next.js 16, React, TypeScript, Tailwind CSS | Modern, responsive dashboard |
+| **Backend** | Go 1.22, Gorilla Mux | High-performance REST API |
+| **Database** | SQLite | Lightweight, embedded persistence |
+| **AI Model** | Gemma via Fireworks AI | Intelligent failure diagnosis |
+| **GPU Platform** | **AMD ROCm 5.7+** | GPU metrics and error detection |
+| **Tool Protocol** | Model Context Protocol (MCP) | Standardized AI tool interface |
+| **Visualization** | Recharts | GPU metrics and performance charts |
+| **Containerization** | Docker, Docker Compose | Production-ready deployment |
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
 - **Docker** and **Docker Compose** (recommended)
   - OR -
-- **Go** 1.22+
-- **Node.js** 18+
-- **Python** 3.9+ with PyTorch (ROCm version for AMD GPUs)
-- **AMD ROCm** (optional, for GPU workloads)
-- **Fireworks AI API Key** (for AI diagnosis)
+- **Go** 1.22+, **Node.js** 18+, **Python** 3.9+
+- **AMD ROCm** (optional, for real GPU metrics)
+- **Fireworks AI API Key** ([Get one here](https://fireworks.ai))
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker (Recommended) 🐳
 
-The easiest way to run CrashLens is using Docker Compose:
+The fastest way to run CrashLens:
 
 ```bash
 # Clone the repository
 git clone https://github.com/kavinsaravan/ML-Failure-Doctor.git
 cd ML-Failure-Doctor
 
-# Create .env file with your API key
+# Create environment file
 echo "FIREWORKS_API_KEY=your_api_key_here" > .env
 
 # Start all services
@@ -133,19 +169,18 @@ docker-compose up -d
 # View logs
 docker-compose logs -f
 
-# Stop all services
-docker-compose down
+# Access the application
+open http://localhost:3000
 ```
 
-The services will be available at:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8080
-- Health Check: http://localhost:8080/health
+**Services:**
+- 🎨 Frontend: http://localhost:3000
+- 🔧 Backend API: http://localhost:8080
+- ✅ Health Check: http://localhost:8080/health
 
 ### Option 2: Local Development
 
 #### 1. Backend Setup
-
 ```bash
 cd backend
 go mod download
@@ -153,70 +188,101 @@ export FIREWORKS_API_KEY="your_api_key_here"
 go run .
 ```
 
-The backend will start on `http://localhost:8080`
-
 #### 2. Frontend Setup
-
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-The frontend will start on `http://localhost:3000`
-
 #### 3. MCP Server Setup
-
 ```bash
 cd mcp-server
 npm install
 npm start
 ```
 
-### Create Your First Workload
+### 🎬 Create Your First Workload
 
-**Option A: Via API**
+**Via Dashboard:**
+1. Navigate to http://localhost:3000
+2. Click "Quick Test Jobs"
+3. Run a sample failure (GPU OOM, missing checkpoint, etc.)
+4. Click "View Details" → "Run AI Diagnosis"
+
+**Via API:**
 ```bash
-curl -X POST http://localhost:8080/api/workloads \
+curl -X POST http://localhost:8080/api/workloads/run \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Training ResNet-50",
-    "type": "ML_JOB",
-    "status": "running"
+    "template": "gpu_oom",
+    "type": "ML_JOB"
   }'
 ```
 
-**Option B: Via Dashboard**
-Navigate to `http://localhost:3000` and use the UI to create workloads.
+---
 
-## API Endpoints
+## 📊 Dashboard Overview
+
+### GPU Workloads Dashboard
+- **Stats Cards**: Total workloads, failures, success rate, wasted GPU time
+- **Quick Test Jobs**: One-click failure scenarios for testing
+- **Workload Table**: Real-time status, failure types, runtime metrics
+- **Detailed Views**: Per-job logs, GPU metrics charts, AI diagnosis
+
+### Agent Runs Dashboard
+- **Agent Metrics**: Total runs, success rate, tool/model calls, latency
+- **Execution Traces**: Step-by-step agent decision timeline
+- **Failure Analysis**: Tool call failures, infinite loop detection
+- **Performance Insights**: Token usage, latency patterns
+
+---
+
+## 🔌 API Reference
 
 ### Workloads
-- `GET /api/workloads` - List all workloads
-- `POST /api/workloads` - Create new workload
-- `GET /api/workloads/{id}` - Get workload details
-- `PUT /api/workloads/{id}` - Update workload
-- `POST /api/workloads/{id}/diagnose` - Run AI diagnosis
+```http
+GET    /api/workloads           # List all workloads
+POST   /api/workloads/run       # Create and run workload from template
+GET    /api/workloads/{id}      # Get workload details with metrics
+POST   /api/workloads/{id}/diagnose  # Run AI diagnosis
+```
+
+### Agent Runs
+```http
+GET    /agent-runs              # List all agent executions
+GET    /agent-runs/{id}         # Get agent run details
+GET    /agent-runs/{id}/steps   # Get execution trace steps
+POST   /agent-runs/{id}/diagnose # Run AI diagnosis on failed agent
+```
 
 ### Statistics
-- `GET /api/stats` - Get platform statistics (total workloads, failures, wasted GPU-seconds)
+```http
+GET    /api/stats               # Platform-wide statistics
+```
 
 ### Health
-- `GET /health` - Health check
+```http
+GET    /health                  # Service health check
+```
 
-## Failure Types Supported
+---
 
-| Failure Type | Description | Safe to Retry? |
-|--------------|-------------|----------------|
-| `gpu_oom` | GPU Out of Memory | No |
-| `missing_checkpoint` | Checkpoint file not found | Yes |
-| `dependency_error` | Python import/package errors | Yes |
-| `data_path_error` | Training data not accessible | Yes |
-| `timeout` | Job exceeded time limit | Yes |
-| `rocm_error` | AMD ROCm/HIP runtime error | Yes |
-| `gpu_driver_error` | GPU driver version mismatch | Yes |
+## 🔍 Failure Types Supported
 
-## Database Schema
+| Failure Type | Description | AMD-Specific | Safe to Retry? |
+|--------------|-------------|--------------|----------------|
+| `GPU_OUT_OF_MEMORY` | HIP out-of-memory error | ✅ Yes | ❌ No |
+| `MISSING_CHECKPOINT` | Checkpoint file not found | ⬜ No | ✅ Yes |
+| `DEPENDENCY_ERROR` | Python import/package errors | ⬜ No | ✅ Yes |
+| `DATA_PATH_ERROR` | Training data not accessible | ⬜ No | ✅ Yes |
+| `TIMEOUT` | Job exceeded time limit | ⬜ No | ✅ Yes |
+| `ROCM_ERROR` | AMD ROCm/HIP runtime error | ✅ Yes | ⚠️ Maybe |
+| `GPU_DRIVER_ERROR` | GPU driver version mismatch | ✅ Yes | ✅ Yes |
+
+---
+
+## 🗄️ Database Schema
 
 ### Workloads Table
 ```sql
@@ -226,7 +292,7 @@ CREATE TABLE workloads (
     type TEXT NOT NULL,              -- ML_JOB or AGENT_RUN
     status TEXT NOT NULL,            -- pending, running, failed, succeeded
     failure_type TEXT,
-    created_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP,
     finished_at TIMESTAMP,
     runtime_seconds REAL,
@@ -234,10 +300,10 @@ CREATE TABLE workloads (
     wasted_gpu_seconds REAL,
 
     -- ML Job Data
-    job_logs TEXT,
-    gpu_metrics TEXT,
+    job_logs TEXT,                   -- Captured stdout/stderr
+    gpu_metrics TEXT,                -- JSON array of rocm-smi snapshots
     checkpoint_state TEXT,
-    failure_report TEXT,
+    failure_report TEXT,             -- AI diagnosis JSON
 
     -- Agent Data
     agent_steps TEXT,
@@ -247,141 +313,186 @@ CREATE TABLE workloads (
 );
 ```
 
-## AI Diagnosis Format
-
-```json
-{
-  "root_cause": "GPU Out of Memory - batch size exceeded GPU capacity",
-  "evidence": [
-    "RuntimeError: CUDA out of memory",
-    "Allocated 15.2 GB / Available 16.0 GB"
-  ],
-  "recommended_fix": "1. Reduce batch size\n2. Enable gradient checkpointing\n3. Use FP16 mixed precision",
-  "safe_to_retry": false,
-  "diagnosed_at": "2026-07-09T02:30:00Z"
-}
+### Agent Runs Table
+```sql
+CREATE TABLE agent_runs (
+    id TEXT PRIMARY KEY,
+    workload_id TEXT NOT NULL,
+    agent_name TEXT NOT NULL,
+    task TEXT NOT NULL,
+    status TEXT NOT NULL,
+    failure_type TEXT,
+    total_tool_calls INTEGER,
+    total_model_calls INTEGER,
+    total_tokens INTEGER,
+    total_latency_ms INTEGER,
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP,
+    FOREIGN KEY (workload_id) REFERENCES workloads(id)
+);
 ```
-
-## Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `FIREWORKS_API_KEY` | Fireworks AI API key for Gemma model | No (falls back to rule-based) |
-| `PORT` | Backend server port | No (default: 8080) |
-
-
-## AMD ROCm Integration
-
-CrashLens is designed to work seamlessly with AMD GPUs:
-
-- **Log Parsing**: Recognizes HIP/ROCm error patterns
-- **Metrics Collection**: Supports `rocm-smi` output format
-- **Compatibility Detection**: Identifies ROCm version mismatches
-- **GPU Discovery**: Works with AMD GPU worker nodes
-
-Example ROCm metrics:
-```bash
-rocm-smi --showmeminfo vram
-```
-
-## Docker Configuration
-
-### Architecture
-
-The Docker setup uses multi-stage builds for optimal image size and security:
-
-- **Backend**: Go binary built in Alpine Linux (~15MB final image)
-- **Frontend**: Next.js standalone output with Node.js runtime
-- **MCP Server**: Node.js application with production dependencies only
-
-### Docker Compose Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| `backend` | 8080 | Go REST API with SQLite database |
-| `frontend` | 3000 | Next.js production build |
-| `mcp-server` | - | MCP tool server (stdio mode) |
-
-### Environment Variables
-
-Create a `.env` file in the project root:
-
-```env
-FIREWORKS_API_KEY=your_fireworks_api_key_here
-```
-
-### Development vs Production
-
-**Development Mode** (with hot reload):
-```bash
-# Use docker-compose.dev.yml for development
-docker-compose -f docker-compose.dev.yml up
-```
-
-**Production Mode**:
-```bash
-# Use default docker-compose.yml
-docker-compose up -d
-```
-
-### Volume Management
-
-- `crashlens-data`: Persistent SQLite database storage
-- `./jobs`: Shared directory for ML job scripts
-- `./agents`: Shared directory for agent configurations
-
-### Health Checks
-
-The backend includes a health check endpoint that Docker uses to verify service availability:
-```bash
-curl http://localhost:8080/health
-```
-
-### Troubleshooting
-
-**View logs**:
-```bash
-docker-compose logs -f [service_name]
-```
-
-**Rebuild containers**:
-```bash
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-**Reset database**:
-```bash
-docker-compose down -v  # Removes volumes
-docker-compose up -d
-```
-
-## Contributing
-
-This project was built for the AMD Developer Hackathon. Contributions welcome!
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-- **AMD** for ROCm platform and hackathon opportunity
-- **Fireworks AI** for Gemma model hosting
-- **Model Context Protocol** for standardized tool interfaces
-
-## Support
-
-For issues and questions:
-- GitHub Issues: [ML-Failure-Doctor Issues](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
-- Hackathon Discord: AMD Developer Hackathon Act II
 
 ---
 
-Built with ❤️ for AMD GPU reliability
+## 🤖 AI Diagnosis Output
+
+CrashLens generates structured, actionable diagnosis reports:
+
+```json
+{
+  "root_cause": "GPU Out of Memory - Batch size exceeded available VRAM",
+  "evidence": [
+    "HIP out of memory error detected in logs",
+    "GPU memory peaked at 15.8 GB / 16.0 GB available",
+    "Batch size: 128, Model parameters: 175M"
+  ],
+  "recommended_fixes": [
+    "Reduce batch size from 128 to 64 or 32",
+    "Enable gradient checkpointing to reduce memory footprint",
+    "Use mixed precision training (FP16) with torch.cuda.amp",
+    "Consider gradient accumulation for effective large batches"
+  ],
+  "prevention": "Implement automatic batch size tuning based on available GPU memory. Monitor memory usage during initial epochs and adjust dynamically.",
+  "safe_to_retry": false,
+  "confidence": 0.95,
+  "diagnosed_at": "2026-07-12T03:24:00Z"
+}
+```
+
+---
+
+## 🐳 Docker Configuration
+
+### Multi-Stage Builds
+Optimized for production with minimal image sizes:
+
+- **Backend**: Go binary in Alpine Linux (~15MB)
+- **Frontend**: Next.js standalone output (~100MB)
+- **MCP Server**: Node.js production build (~50MB)
+
+### Services Architecture
+
+| Service | Port | Description | Health Check |
+|---------|------|-------------|--------------|
+| `backend` | 8080 | Go REST API + SQLite | ✅ /health endpoint |
+| `frontend` | 3000 | Next.js production build | Depends on backend |
+| `mcp-server` | - | MCP tool server (stdio) | Depends on backend |
+
+### Volume Persistence
+```yaml
+volumes:
+  crashlens-data:      # SQLite database
+  ./jobs:              # ML job scripts (mounted)
+  ./agents:            # Agent configurations (mounted)
+```
+
+### Environment Variables
+
+Create `.env` file:
+```env
+FIREWORKS_API_KEY=your_fireworks_api_key_here
+PORT=8080
+NODE_ENV=production
+```
+
+---
+
+## 🔧 Development
+
+### Local Development Setup
+```bash
+# Backend (with hot reload)
+cd backend
+air  # or: go run .
+
+# Frontend (with hot reload)
+cd frontend
+npm run dev
+
+# MCP Server
+cd mcp-server
+npm run dev
+```
+
+### Running Tests
+```bash
+# Backend tests
+cd backend
+go test ./...
+
+# Frontend tests
+cd frontend
+npm test
+```
+
+### Building for Production
+```bash
+# Backend binary
+cd backend
+go build -ldflags="-w -s" -o crashlens
+
+# Frontend static build
+cd frontend
+npm run build
+```
+
+---
+
+## 📈 Monitoring & Observability
+
+### GPU Metrics Collected
+- **Memory**: Used MB, Total MB, Utilization %
+- **Compute**: GPU utilization %
+- **Thermal**: Temperature (°C)
+- **Temporal**: Timestamp for each snapshot
+
+### Performance Dashboards
+- Real-time GPU utilization charts
+- Memory usage timeline
+- Temperature monitoring
+- Wasted GPU-seconds tracking
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! This project was built for the AMD Developer Hackathon.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details
+
+---
+
+## 🙏 Acknowledgments
+
+- **AMD** for the ROCm platform and hackathon opportunity
+- **Fireworks AI** for Gemma model hosting and fast inference
+- **Model Context Protocol** for standardized tool interfaces
+- **Next.js Team** for an amazing React framework
+
+---
+
+## 📞 Support
+
+- **GitHub Issues**: [Report bugs or request features](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
+- **Hackathon Discord**: AMD Developer Hackathon Act II community
+- **Documentation**: See `/docs` folder for detailed guides
+
+---
+
+<div align="center">
+
+**Built with ❤️ for AMD GPU Reliability**
+
+[🌐 Live Demo](http://localhost:3000) • [📚 Documentation](./docs) • [🐛 Report Bug](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
+
+</div>
