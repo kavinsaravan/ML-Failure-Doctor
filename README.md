@@ -145,80 +145,217 @@ if ROCmAvailable() {
 
 ### Prerequisites
 
-- **Docker** and **Docker Compose** (recommended)
-  - OR -
-- **Go** 1.22+, **Node.js** 18+, **Python** 3.9+
-- **AMD ROCm** (optional, for real GPU metrics)
-- **Fireworks AI API Key** ([Get one here](https://fireworks.ai))
+**Choose one of these options:**
+
+#### Option A: Docker (Recommended for Quick Testing)
+- **Docker** and **Docker Compose** installed
+- **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
+
+#### Option B: Local Development
+- **Go** 1.22+ ([Download](https://go.dev/dl/))
+- **Node.js** 18+ ([Download](https://nodejs.org/))
+- **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
+- **AMD ROCm** (optional, for real GPU metrics on AMD hardware)
+
+---
 
 ### Option 1: Docker (Recommended) 🐳
 
-The fastest way to run CrashLens:
+**Step-by-step setup:**
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/kavinsaravan/ML-Failure-Doctor.git
 cd ML-Failure-Doctor
 
-# Create environment file
+# 2. Create environment file with your Fireworks AI API key
 echo "FIREWORKS_API_KEY=your_api_key_here" > .env
 
-# Start all services
+# 3. Start all services (backend, frontend, database)
 docker-compose up -d
 
-# View logs
+# 4. Wait for services to start (about 30 seconds)
+# Check logs to verify everything is running:
 docker-compose logs -f
 
-# Access the application
+# 5. Access the application
 open http://localhost:3000
 ```
 
-**Services:**
-- 🎨 Frontend: http://localhost:3000
-- 🔧 Backend API: http://localhost:8080
-- ✅ Health Check: http://localhost:8080/health
+**What's Running:**
+- 🎨 **Frontend Dashboard**: http://localhost:3000
+- 🔧 **Backend API**: http://localhost:8080
+- ✅ **Health Check**: http://localhost:8080/health
+- 💾 **Database**: SQLite (auto-created in Docker volume)
 
-### Option 2: Local Development
-
-#### 1. Backend Setup
+**To Stop:**
 ```bash
+docker-compose down
+```
+
+**To Restart:**
+```bash
+docker-compose restart
+```
+
+---
+
+### Option 2: Local Development (For Developers)
+
+**Step 1: Backend Setup**
+
+```bash
+# Navigate to backend directory
 cd backend
+
+# Download Go dependencies
 go mod download
-export FIREWORKS_API_KEY="your_api_key_here"
+
+# Set your Fireworks AI API key (get free key at fireworks.ai)
+export FIREWORKS_API_KEY="your_fireworks_api_key_here"
+
+# Start the backend server (runs on port 8080)
 go run .
+
+# You should see: "CrashLens Backend starting on port 8080"
 ```
 
-#### 2. Frontend Setup
+**Keep this terminal open and running.**
+
+---
+
+**Step 2: Frontend Setup**
+
+Open a **new terminal window** and run:
+
 ```bash
+# Navigate to frontend directory (from project root)
 cd frontend
+
+# Install Node.js dependencies
 npm install
+
+# Start the development server (runs on port 3000)
 npm run dev
+
+# You should see: "Ready on http://localhost:3000"
 ```
 
-#### 3. MCP Server Setup
+**Keep this terminal open and running.**
+
+---
+
+**Step 3: (Optional) MCP Server Setup**
+
+For advanced Model Context Protocol features, open a **third terminal**:
+
 ```bash
+# Navigate to MCP server directory (from project root)
 cd mcp-server
+
+# Install dependencies
 npm install
+
+# Start the MCP server
 npm start
 ```
 
+---
+
+**Verify Everything is Running:**
+
+1. Open http://localhost:3000 in your browser
+2. You should see the CrashLens landing page
+3. Click "Get Started" to access the dashboard
+4. Backend health check: http://localhost:8080/health (should return `{"status":"ok"}`)
+
+**Troubleshooting:**
+
+- **Port 3000 or 8080 already in use?** Stop other services or change ports in config
+- **Backend won't start?** Ensure Go 1.22+ is installed: `go version`
+- **Frontend won't start?** Ensure Node.js 18+ is installed: `node --version`
+- **Can't see data?** The dashboard starts empty - use "Quick Test Jobs" to generate sample workloads
+
+---
+
 ### 🎬 Create Your First Workload
 
-**Via Dashboard:**
-1. Navigate to http://localhost:3000
-2. Click "Quick Test Jobs"
-3. Run a sample failure (GPU OOM, missing checkpoint, etc.)
-4. Click "View Details" → "Run AI Diagnosis"
+**Via Dashboard (Easiest Method):**
 
-**Via API:**
+1. **Open the Dashboard**
+   - Navigate to http://localhost:3000
+   - Click "Get Started" to enter the dashboard
+
+2. **Generate Test Workloads**
+   - Look for the "Quick Test Jobs" section
+   - Click on any test button:
+     - **GPU OOM Test** - Simulates out-of-memory failure
+     - **Dependency Error** - Missing Python package
+     - **Missing Checkpoint** - File not found error
+     - **Successful Job** - Completes without errors
+
+3. **View Results**
+   - The workload appears in the table below
+   - Click "View Details" to see logs and GPU metrics
+   - For failed jobs, click "Run AI Diagnosis" to get AI-powered fixes
+
+**Via API (Advanced):**
+
+Test the backend directly with curl:
+
 ```bash
-curl -X POST http://localhost:8080/api/workloads/run \
+# Check backend is running
+curl http://localhost:8080/health
+
+# Create a test workload
+curl -X POST http://localhost:8080/workloads/run \
   -H "Content-Type: application/json" \
   -d '{
     "template": "gpu_oom",
     "type": "ML_JOB"
   }'
+
+# List all workloads
+curl http://localhost:8080/workloads
 ```
+
+**Via Jupyter Notebook (Real AMD GPU Testing):**
+
+For testing with real AMD GPUs on AMD Developer Cloud:
+
+1. **Get the Notebook**
+   - Download: `CrashLens_AMD_GPU_Demo.ipynb` from the repository
+   - Or create from the provided template
+
+2. **Setup Backend Connection**
+   - If testing locally: Use ngrok to expose your backend
+     ```bash
+     ngrok http 8080
+     # Copy the https URL (e.g., https://abc.ngrok-free.dev)
+     ```
+   - Update `CRASHLENS_API` in the notebook with your backend URL
+
+3. **Upload to AMD Jupyter**
+   - Login to [AMD Developer Cloud](https://radeon-global.anruicloud.com/)
+   - Upload the notebook to your Jupyter environment
+   - Ensure PyTorch with ROCm is available
+
+4. **Run Tests**
+   - Execute cells sequentially
+   - Tests include:
+     - ✅ Successful PyTorch training
+     - ❌ GPU Out of Memory (intentional)
+     - ❌ Dependency errors
+     - ❌ Missing checkpoint files
+   - AI diagnosis runs automatically for failures
+   - View results in CrashLens dashboard
+
+**Notebook Features:**
+- Real AMD GPU metric collection via PyTorch
+- Automatic workload creation and tracking
+- Live synchronization with CrashLens backend
+- AI-powered failure diagnosis
+- Works with MI210, MI250X, and other AMD GPUs
 
 ---
 
@@ -240,30 +377,58 @@ curl -X POST http://localhost:8080/api/workloads/run \
 
 ## 🔌 API Reference
 
+**Base URL**: `http://localhost:8080` (local) or your deployed backend URL
+
 ### Workloads
 ```http
-GET    /api/workloads           # List all workloads
-POST   /api/workloads/run       # Create and run workload from template
-GET    /api/workloads/{id}      # Get workload details with metrics
-POST   /api/workloads/{id}/diagnose  # Run AI diagnosis
+GET    /workloads               # List all GPU workloads
+POST   /workloads               # Create a new workload
+POST   /workloads/run           # Create and run workload from template
+GET    /workloads/{id}          # Get workload details with metrics
+PUT    /workloads/{id}          # Update workload status/data
+GET    /workloads/{id}/logs     # Get workload execution logs
+GET    /workloads/{id}/metrics  # Get GPU metrics for workload
+POST   /workloads/{id}/diagnose # Run AI diagnosis on failure
 ```
 
 ### Agent Runs
 ```http
 GET    /agent-runs              # List all agent executions
+POST   /agent-runs              # Create a new agent run
 GET    /agent-runs/{id}         # Get agent run details
+PUT    /agent-runs/{id}         # Update agent run status
 GET    /agent-runs/{id}/steps   # Get execution trace steps
 POST   /agent-runs/{id}/diagnose # Run AI diagnosis on failed agent
+POST   /agent-steps             # Create agent step in trace
 ```
 
 ### Statistics
 ```http
-GET    /api/stats               # Platform-wide statistics
+GET    /summary                 # Platform-wide statistics and metrics
 ```
 
 ### Health
 ```http
-GET    /health                  # Service health check
+GET    /health                  # Service health check (returns {"status":"ok"})
+```
+
+**Example API Calls:**
+
+```bash
+# Create a workload
+curl -X POST http://localhost:8080/workloads \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Training Job",
+    "type": "ML_JOB",
+    "status": "running"
+  }'
+
+# Get AI diagnosis for a failed workload
+curl -X POST http://localhost:8080/workloads/1/diagnose
+
+# List all workloads
+curl http://localhost:8080/workloads
 ```
 
 ---
@@ -454,6 +619,80 @@ npm run build
 
 ---
 
+## 🌐 Deployment
+
+### Vercel Deployment (Frontend)
+
+The frontend is deployed on Vercel for easy access:
+
+**Live Demo**: https://frontend-zeta-eight-92.vercel.app
+
+**Deploy Your Own:**
+
+```bash
+# Install Vercel CLI
+npm install -g vercel
+
+# Login to Vercel
+vercel login
+
+# Deploy from the frontend directory
+cd frontend
+vercel --prod
+
+# Set environment variable for backend API
+vercel env add NEXT_PUBLIC_API_URL production
+# Enter your backend URL (e.g., https://your-backend.fly.io or ngrok URL)
+```
+
+### Backend Deployment Options
+
+**Option 1: Railway** (Recommended for Go backends)
+1. Create account at [railway.app](https://railway.app)
+2. Connect your GitHub repository
+3. Add `FIREWORKS_API_KEY` environment variable
+4. Railway auto-detects Go and deploys
+
+**Option 2: Fly.io**
+```bash
+# Install flyctl
+curl -L https://fly.io/install.sh | sh
+
+# Login and deploy
+cd backend
+fly launch
+fly secrets set FIREWORKS_API_KEY=your_key_here
+fly deploy
+```
+
+**Option 3: ngrok (Quick Testing)**
+```bash
+# Start backend locally
+cd backend && go run .
+
+# In another terminal, expose with ngrok
+ngrok http 8080
+
+# Use the ngrok URL (e.g., https://xyz.ngrok-free.dev) as NEXT_PUBLIC_API_URL
+```
+
+### Environment Variables
+
+**Frontend** (`frontend/.env.local`):
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8080  # Local development
+# OR
+NEXT_PUBLIC_API_URL=https://your-backend-url.com  # Production
+```
+
+**Backend** (set in shell or Docker):
+```env
+FIREWORKS_API_KEY=your_fireworks_api_key_here
+PORT=8080  # Optional, defaults to 8080
+```
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! This project was built for the AMD Developer Hackathon.
@@ -470,6 +709,6 @@ We welcome contributions! This project was built for the AMD Developer Hackathon
 <div align="center">
 
 
-[🌐 Live Demo](http://localhost:3000) • [📚 Documentation](./docs) • [🐛 Report Bug](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
+[🌐 Live Demo](https://frontend-zeta-eight-92.vercel.app) • [📚 Documentation](./docs) • [🐛 Report Bug](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
 
 </div>
