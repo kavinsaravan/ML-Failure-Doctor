@@ -103,6 +103,12 @@ export default function Dashboard() {
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
+          <Link
+            href="/"
+            className="text-blue-400 hover:text-blue-300 flex items-center gap-2 mb-4 inline-flex"
+          >
+            ← Back to Home
+          </Link>
           <div className="flex items-center gap-3 mb-3">
             <h1 className="text-4xl font-bold text-white">CrashLens Dashboard</h1>
             <span className="px-3 py-1 bg-red-600 text-white text-sm font-semibold rounded">AMD ROCm</span>

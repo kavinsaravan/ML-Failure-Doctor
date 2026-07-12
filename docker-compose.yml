@@ -5,40 +5,62 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: crashlens-backend
     ports:
       - "8080:8080"
     environment:
       - PORT=8080
       - FIREWORKS_API_KEY=${FIREWORKS_API_KEY}
     volumes:
-      - ./backend:/app
+      - crashlens-data:/app/data
       - ./jobs:/jobs
       - ./agents:/agents
-      - crashlens-data:/app/data
-    command: go run main.go
+    restart: unless-stopped
     networks:
       - crashlens-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: runner
+    container_name: crashlens-frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8080
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-    command: npm run dev
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NODE_ENV=production
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - crashlens-network
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: crashlens-mcp
+    environment:
+      - NODE_ENV=production
+      - BACKEND_URL=http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - crashlens-network
 
 volumes:
   crashlens-data:
+    driver: local
 
 networks:
   crashlens-network:

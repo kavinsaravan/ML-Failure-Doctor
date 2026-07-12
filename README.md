@@ -107,13 +107,44 @@ ML-Failure-Doctor/
 
 ### Prerequisites
 
+- **Docker** and **Docker Compose** (recommended)
+  - OR -
 - **Go** 1.22+
 - **Node.js** 18+
 - **Python** 3.9+ with PyTorch (ROCm version for AMD GPUs)
 - **AMD ROCm** (optional, for GPU workloads)
 - **Fireworks AI API Key** (for AI diagnosis)
 
-### 1. Backend Setup
+### Option 1: Docker (Recommended)
+
+The easiest way to run CrashLens is using Docker Compose:
+
+```bash
+# Clone the repository
+git clone https://github.com/kavinsaravan/ML-Failure-Doctor.git
+cd ML-Failure-Doctor
+
+# Create .env file with your API key
+echo "FIREWORKS_API_KEY=your_api_key_here" > .env
+
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
+```
+
+The services will be available at:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8080
+- Health Check: http://localhost:8080/health
+
+### Option 2: Local Development
+
+#### 1. Backend Setup
 
 ```bash
 cd backend
@@ -124,7 +155,7 @@ go run .
 
 The backend will start on `http://localhost:8080`
 
-### 2. Frontend Setup
+#### 2. Frontend Setup
 
 ```bash
 cd frontend
@@ -134,7 +165,7 @@ npm run dev
 
 The frontend will start on `http://localhost:3000`
 
-### 3. MCP Server Setup
+#### 3. MCP Server Setup
 
 ```bash
 cd mcp-server
@@ -142,7 +173,7 @@ npm install
 npm start
 ```
 
-### 4. Create Your First Workload
+### Create Your First Workload
 
 **Option A: Via API**
 ```bash
@@ -251,6 +282,78 @@ CrashLens is designed to work seamlessly with AMD GPUs:
 Example ROCm metrics:
 ```bash
 rocm-smi --showmeminfo vram
+```
+
+## Docker Configuration
+
+### Architecture
+
+The Docker setup uses multi-stage builds for optimal image size and security:
+
+- **Backend**: Go binary built in Alpine Linux (~15MB final image)
+- **Frontend**: Next.js standalone output with Node.js runtime
+- **MCP Server**: Node.js application with production dependencies only
+
+### Docker Compose Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| `backend` | 8080 | Go REST API with SQLite database |
+| `frontend` | 3000 | Next.js production build |
+| `mcp-server` | - | MCP tool server (stdio mode) |
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+FIREWORKS_API_KEY=your_fireworks_api_key_here
+```
+
+### Development vs Production
+
+**Development Mode** (with hot reload):
+```bash
+# Use docker-compose.dev.yml for development
+docker-compose -f docker-compose.dev.yml up
+```
+
+**Production Mode**:
+```bash
+# Use default docker-compose.yml
+docker-compose up -d
+```
+
+### Volume Management
+
+- `crashlens-data`: Persistent SQLite database storage
+- `./jobs`: Shared directory for ML job scripts
+- `./agents`: Shared directory for agent configurations
+
+### Health Checks
+
+The backend includes a health check endpoint that Docker uses to verify service availability:
+```bash
+curl http://localhost:8080/health
+```
+
+### Troubleshooting
+
+**View logs**:
+```bash
+docker-compose logs -f [service_name]
+```
+
+**Rebuild containers**:
+```bash
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+**Reset database**:
+```bash
+docker-compose down -v  # Removes volumes
+docker-compose up -d
 ```
 
 ## Contributing

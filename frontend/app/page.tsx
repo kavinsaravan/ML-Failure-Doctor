@@ -11,7 +11,7 @@ export default function Home() {
             Diagnose failed ML jobs and AI agents in seconds.
           </h1>
           <p className="text-xl text-slate-300 mb-12 leading-relaxed">
-            CrashLens monitors AMD GPU workloads, captures logs and metrics, and uses Gemma to generate root-cause analysis and fix recommendations.
+            CrashLens monitors AMD GPU workloads, captures logs and metrics, and uses Gemma to generate root-cause analysis and repair recommendations.
           </p>
           <div className="flex gap-4 justify-center">
             <Link

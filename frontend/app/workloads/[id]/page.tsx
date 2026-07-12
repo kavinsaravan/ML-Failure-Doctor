@@ -380,9 +380,9 @@ export default function WorkloadDetail() {
               </div>
             </div>
 
-            {/* Recommended Fix - Highlighted */}
+            {/* Recommended Repair - Highlighted */}
             <div className="mb-6">
-              <h3 className="text-xl font-semibold text-white mb-3">Recommended Fix</h3>
+              <h3 className="text-xl font-semibold text-white mb-3">Recommended Repair</h3>
               <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-6">
                 <div className="text-slate-200 whitespace-pre-line leading-relaxed">
                   {diagnosis.recommended_fix}
@@ -402,7 +402,7 @@ export default function WorkloadDetail() {
                         Yes, safe to retry after applying fixes
                       </div>
                       <div className="text-slate-400 text-sm">
-                        This issue can be resolved with configuration changes. Apply the recommended fixes and re-run the job.
+                        This issue can be resolved with configuration changes. Apply the recommended repairs and re-run the job.
                       </div>
                     </div>
                   </>

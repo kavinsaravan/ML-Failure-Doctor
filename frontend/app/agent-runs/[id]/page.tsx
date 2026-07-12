@@ -341,10 +341,10 @@ export default function AgentTracePage() {
                   </ul>
                 </div>
 
-                {/* Recommended Fixes */}
+                {/* Recommended Repairs */}
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">
-                    Recommended Fixes
+                    Recommended Repairs
                   </h3>
                   <ul className="space-y-1">
                     {diagnosis.recommended_fixes.map((fix, idx) => (
