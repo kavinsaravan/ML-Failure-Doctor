@@ -126,6 +126,98 @@ if ROCmAvailable() {
 
 ---
 
+## 📁 Project Structure
+
+```
+ML-Failure-Doctor/
+├── backend/                    # Go Backend Service
+│   ├── main.go                 # Application entry point
+│   ├── api/                    # REST API handlers
+│   │   ├── handlers.go         # Workload & agent endpoints
+│   │   └── server.go           # Server configuration
+│   ├── db/                     # Database layer
+│   │   └── database.go         # SQLite operations
+│   ├── fireworks/              # AI integration
+│   │   └── client.go           # Gemma model client
+│   ├── gpu/                    # GPU metrics collection
+│   │   ├── collector.go        # Metric collector interface
+│   │   ├── rocm.go             # ROCm/rocm-smi integration
+│   │   └── simulator.go        # Simulated metrics for dev
+│   ├── jobs/                   # Job execution engine
+│   │   ├── runner.go           # Job runner
+│   │   └── templates.go        # Test job templates
+│   └── go.mod                  # Go dependencies
+│
+├── frontend/                   # Next.js Dashboard
+│   ├── app/                    # App Router pages
+│   │   ├── page.tsx            # Landing page
+│   │   ├── dashboard/          # Main dashboard
+│   │   │   └── page.tsx        # GPU workloads view
+│   │   ├── workloads/[id]/     # Workload details
+│   │   │   └── page.tsx        # Logs, metrics, diagnosis
+│   │   └── agent-runs/         # Agent observability
+│   │       ├── page.tsx        # Agent runs list
+│   │       └── [id]/page.tsx   # Execution trace view
+│   ├── components/             # React components
+│   ├── lib/                    # Utilities
+│   │   └── api.ts              # API client
+│   ├── public/                 # Static assets
+│   ├── package.json            # Node dependencies
+│   └── next.config.ts          # Next.js configuration
+│
+├── mcp-server/                 # Model Context Protocol Server
+│   ├── index.js                # MCP server implementation
+│   ├── tools/                  # MCP tool definitions
+│   │   ├── workload_logs.js    # Get workload logs tool
+│   │   ├── gpu_metrics.js      # Get GPU metrics tool
+│   │   └── diagnosis.js        # Get diagnosis tool
+│   └── package.json            # Node dependencies
+│
+├── notebooks/                  # 🆕 Jupyter Notebooks
+│   ├── CrashLens_AMD_GPU_Demo.ipynb  # AMD GPU testing notebook
+│   └── README.md               # Notebook usage guide
+│
+├── jobs/                       # Job templates (auto-generated)
+│   ├── gpu_oom.py              # GPU OOM test script
+│   ├── dependency_error.py     # Dependency error test
+│   ├── missing_checkpoint.py   # Missing file test
+│   └── successful_job.py       # Successful training test
+│
+├── docker-compose.yml          # Multi-service orchestration
+├── Dockerfile                  # Backend container
+├── frontend/Dockerfile         # Frontend container
+├── .gitignore                  # Git ignore rules
+├── vercel.json                 # Vercel deployment config
+└── README.md                   # This file
+```
+
+### Key Components
+
+**Backend (`/backend`)**
+- **API Layer**: REST endpoints for workloads, agents, metrics, diagnosis
+- **Database**: SQLite for persistent storage of workloads, metrics, traces
+- **GPU Metrics**: Real-time collection via `rocm-smi` or simulated for dev
+- **AI Integration**: Fireworks AI client for Gemma-powered diagnosis
+- **Job Runner**: Executes Python training scripts and captures logs
+
+**Frontend (`/frontend`)**
+- **Dashboard**: Real-time monitoring of GPU workloads and AI agents
+- **Workload Details**: Per-job logs, GPU metrics charts, AI diagnosis
+- **Agent Traces**: Step-by-step execution timeline with tool/model calls
+- **API Client**: Centralized fetch wrapper with ngrok bypass headers
+
+**MCP Server (`/mcp-server`)**
+- **Tool Interface**: Standardized Model Context Protocol tools
+- **Diagnostic Tools**: Expose CrashLens capabilities to AI assistants
+- **Integration**: Connect AI agents to CrashLens observability
+
+**Notebooks (`/notebooks`)**
+- **AMD GPU Testing**: Complete Jupyter notebook for real GPU workloads
+- **Demo Scenarios**: 4 test cases (success, OOM, errors, missing files)
+- **Cloud-Ready**: Designed for AMD Developer Cloud deployment
+
+---
+
 ## 🛠️ Tech Stack
 
 | Component | Technology | Purpose |
