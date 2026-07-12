@@ -262,22 +262,6 @@ npm start
 
 ---
 
-**Verify Everything is Running:**
-
-1. Open http://localhost:3000 in your browser
-2. You should see the CrashLens landing page
-3. Click "Get Started" to access the dashboard
-4. Backend health check: http://localhost:8080/health (should return `{"status":"ok"}`)
-
-**Troubleshooting:**
-
-- **Port 3000 or 8080 already in use?** Stop other services or change ports in config
-- **Backend won't start?** Ensure Go 1.22+ is installed: `go version`
-- **Frontend won't start?** Ensure Node.js 18+ is installed: `node --version`
-- **Can't see data?** The dashboard starts empty - use "Quick Test Jobs" to generate sample workloads
-
----
-
 ### 🎬 Create Your First Workload
 
 **Via Dashboard (Easiest Method):**
@@ -318,60 +302,6 @@ curl -X POST http://localhost:8080/workloads/run \
 # List all workloads
 curl http://localhost:8080/workloads
 ```
-
-**Via Jupyter Notebook (Real AMD GPU Testing):**
-
-For testing with real AMD GPUs on AMD Developer Cloud:
-
-1. **Get the Notebook**
-   - Download: `CrashLens_AMD_GPU_Demo.ipynb` from the repository
-   - Or create from the provided template
-
-2. **Setup Backend Connection**
-   - If testing locally: Use ngrok to expose your backend
-     ```bash
-     ngrok http 8080
-     # Copy the https URL (e.g., https://abc.ngrok-free.dev)
-     ```
-   - Update `CRASHLENS_API` in the notebook with your backend URL
-
-3. **Upload to AMD Jupyter**
-   - Login to [AMD Developer Cloud](https://radeon-global.anruicloud.com/)
-   - Upload the notebook to your Jupyter environment
-   - Ensure PyTorch with ROCm is available
-
-4. **Run Tests**
-   - Execute cells sequentially
-   - Tests include:
-     - ✅ Successful PyTorch training
-     - ❌ GPU Out of Memory (intentional)
-     - ❌ Dependency errors
-     - ❌ Missing checkpoint files
-   - AI diagnosis runs automatically for failures
-   - View results in CrashLens dashboard
-
-**Notebook Features:**
-- Real AMD GPU metric collection via PyTorch
-- Automatic workload creation and tracking
-- Live synchronization with CrashLens backend
-- AI-powered failure diagnosis
-- Works with MI210, MI250X, and other AMD GPUs
-
----
-
-## 📊 Dashboard Overview
-
-### GPU Workloads Dashboard
-- **Stats Cards**: Total workloads, failures, success rate, wasted GPU time
-- **Quick Test Jobs**: One-click failure scenarios for testing
-- **Workload Table**: Real-time status, failure types, runtime metrics
-- **Detailed Views**: Per-job logs, GPU metrics charts, AI diagnosis
-
-### Agent Runs Dashboard
-- **Agent Metrics**: Total runs, success rate, tool/model calls, latency
-- **Execution Traces**: Step-by-step agent decision timeline
-- **Failure Analysis**: Tool call failures, infinite loop detection
-- **Performance Insights**: Token usage, latency patterns
 
 ---
 
@@ -430,100 +360,6 @@ curl -X POST http://localhost:8080/workloads/1/diagnose
 # List all workloads
 curl http://localhost:8080/workloads
 ```
-
----
-
-## 🔍 Failure Types Supported
-
-| Failure Type | Description | AMD-Specific | Safe to Retry? |
-|--------------|-------------|--------------|----------------|
-| `GPU_OUT_OF_MEMORY` | HIP out-of-memory error | ✅ Yes | ❌ No |
-| `MISSING_CHECKPOINT` | Checkpoint file not found | ⬜ No | ✅ Yes |
-| `DEPENDENCY_ERROR` | Python import/package errors | ⬜ No | ✅ Yes |
-| `DATA_PATH_ERROR` | Training data not accessible | ⬜ No | ✅ Yes |
-| `TIMEOUT` | Job exceeded time limit | ⬜ No | ✅ Yes |
-| `ROCM_ERROR` | AMD ROCm/HIP runtime error | ✅ Yes | ⚠️ Maybe |
-| `GPU_DRIVER_ERROR` | GPU driver version mismatch | ✅ Yes | ✅ Yes |
-
----
-
-## 🗄️ Database Schema
-
-### Workloads Table
-```sql
-CREATE TABLE workloads (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL,              -- ML_JOB or AGENT_RUN
-    status TEXT NOT NULL,            -- pending, running, failed, succeeded
-    failure_type TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
-    runtime_seconds REAL,
-    exit_code INTEGER,
-    wasted_gpu_seconds REAL,
-
-    -- ML Job Data
-    job_logs TEXT,                   -- Captured stdout/stderr
-    gpu_metrics TEXT,                -- JSON array of rocm-smi snapshots
-    checkpoint_state TEXT,
-    failure_report TEXT,             -- AI diagnosis JSON
-
-    -- Agent Data
-    agent_steps TEXT,
-    tool_calls TEXT,
-    model_calls TEXT,
-    trace_events TEXT
-);
-```
-
-### Agent Runs Table
-```sql
-CREATE TABLE agent_runs (
-    id TEXT PRIMARY KEY,
-    workload_id TEXT NOT NULL,
-    agent_name TEXT NOT NULL,
-    task TEXT NOT NULL,
-    status TEXT NOT NULL,
-    failure_type TEXT,
-    total_tool_calls INTEGER,
-    total_model_calls INTEGER,
-    total_tokens INTEGER,
-    total_latency_ms INTEGER,
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
-    FOREIGN KEY (workload_id) REFERENCES workloads(id)
-);
-```
-
----
-
-## 🤖 AI Diagnosis Output
-
-CrashLens generates structured, actionable diagnosis reports:
-
-```json
-{
-  "root_cause": "GPU Out of Memory - Batch size exceeded available VRAM",
-  "evidence": [
-    "HIP out of memory error detected in logs",
-    "GPU memory peaked at 15.8 GB / 16.0 GB available",
-    "Batch size: 128, Model parameters: 175M"
-  ],
-  "recommended_fixes": [
-    "Reduce batch size from 128 to 64 or 32",
-    "Enable gradient checkpointing to reduce memory footprint",
-    "Use mixed precision training (FP16) with torch.cuda.amp",
-    "Consider gradient accumulation for effective large batches"
-  ],
-  "prevention": "Implement automatic batch size tuning based on available GPU memory. Monitor memory usage during initial epochs and adjust dynamically.",
-  "safe_to_retry": false,
-  "confidence": 0.95,
-  "diagnosed_at": "2026-07-12T03:24:00Z"
-}
-```
-
 ---
 
 ## 🐳 Docker Configuration
@@ -559,63 +395,6 @@ FIREWORKS_API_KEY=your_fireworks_api_key_here
 PORT=8080
 NODE_ENV=production
 ```
-
----
-
-## 🔧 Development
-
-### Local Development Setup
-```bash
-# Backend (with hot reload)
-cd backend
-air  # or: go run .
-
-# Frontend (with hot reload)
-cd frontend
-npm run dev
-
-# MCP Server
-cd mcp-server
-npm run dev
-```
-
-### Running Tests
-```bash
-# Backend tests
-cd backend
-go test ./...
-
-# Frontend tests
-cd frontend
-npm test
-```
-
-### Building for Production
-```bash
-# Backend binary
-cd backend
-go build -ldflags="-w -s" -o crashlens
-
-# Frontend static build
-cd frontend
-npm run build
-```
-
----
-
-## 📈 Monitoring & Observability
-
-### GPU Metrics Collected
-- **Memory**: Used MB, Total MB, Utilization %
-- **Compute**: GPU utilization %
-- **Thermal**: Temperature (°C)
-- **Temporal**: Timestamp for each snapshot
-
-### Performance Dashboards
-- Real-time GPU utilization charts
-- Memory usage timeline
-- Temperature monitoring
-- Wasted GPU-seconds tracking
 
 ---
 
@@ -705,10 +484,3 @@ We welcome contributions! This project was built for the AMD Developer Hackathon
 
 
 ---
-
-<div align="center">
-
-
-[🌐 Live Demo](https://frontend-zeta-eight-92.vercel.app) • [📚 Documentation](./docs) • [🐛 Report Bug](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
-
-</div>
