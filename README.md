@@ -464,34 +464,11 @@ We welcome contributions! This project was built for the AMD Developer Hackathon
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details
-
----
-
-## 🙏 Acknowledgments
-
-- **AMD** for the ROCm platform and hackathon opportunity
-- **Fireworks AI** for Gemma model hosting and fast inference
-- **Model Context Protocol** for standardized tool interfaces
-- **Next.js Team** for an amazing React framework
-
----
-
-## 📞 Support
-
-- **GitHub Issues**: [Report bugs or request features](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
-- **Hackathon Discord**: AMD Developer Hackathon Act II community
-- **Documentation**: See `/docs` folder for detailed guides
 
 ---
 
 <div align="center">
 
-**Built with ❤️ for AMD GPU Reliability**
 
 [🌐 Live Demo](http://localhost:3000) • [📚 Documentation](./docs) • [🐛 Report Bug](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
 
