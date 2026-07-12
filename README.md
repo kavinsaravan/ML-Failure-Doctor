@@ -191,33 +191,6 @@ ML-Failure-Doctor/
 └── README.md                   # This file
 ```
 
-### Key Components
-
-**Backend (`/backend`)**
-- **API Layer**: REST endpoints for workloads, agents, metrics, diagnosis
-- **Database**: SQLite for persistent storage of workloads, metrics, traces
-- **GPU Metrics**: Real-time collection via `rocm-smi` or simulated for dev
-- **AI Integration**: Fireworks AI client for Gemma-powered diagnosis
-- **Job Runner**: Executes Python training scripts and captures logs
-
-**Frontend (`/frontend`)**
-- **Dashboard**: Real-time monitoring of GPU workloads and AI agents
-- **Workload Details**: Per-job logs, GPU metrics charts, AI diagnosis
-- **Agent Traces**: Step-by-step execution timeline with tool/model calls
-- **API Client**: Centralized fetch wrapper with ngrok bypass headers
-
-**MCP Server (`/mcp-server`)**
-- **Tool Interface**: Standardized Model Context Protocol tools
-- **Diagnostic Tools**: Expose CrashLens capabilities to AI assistants
-- **Integration**: Connect AI agents to CrashLens observability
-
-**Notebooks (`/notebooks`)**
-- **AMD GPU Testing**: Complete Jupyter notebook for real GPU workloads
-- **Demo Scenarios**: 4 test cases (success, OOM, errors, missing files)
-- **Cloud-Ready**: Designed for AMD Developer Cloud deployment
-
----
-
 ## 🛠️ Tech Stack
 
 | Component | Technology | Purpose |
