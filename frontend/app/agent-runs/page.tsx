@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Activity, AlertCircle, CheckCircle, Clock, Zap, Brain } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -55,6 +56,17 @@ export default function AgentRunsPage() {
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
+  // Calculate stats
+  const totalRuns = agentRuns.length;
+  const failedRuns = agentRuns.filter(r => r.status === 'failed').length;
+  const completedRuns = agentRuns.filter(r => r.status === 'completed').length;
+  const successRate = totalRuns > 0 ? ((completedRuns / totalRuns) * 100).toFixed(1) : '0';
+  const totalToolCalls = agentRuns.reduce((sum, r) => sum + r.total_tool_calls, 0);
+  const totalModelCalls = agentRuns.reduce((sum, r) => sum + r.total_model_calls, 0);
+  const avgLatency = agentRuns.length > 0
+    ? agentRuns.reduce((sum, r) => sum + (r.total_latency_ms || 0), 0) / agentRuns.length
+    : 0;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 p-8">
@@ -69,32 +81,108 @@ export default function AgentRunsPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 p-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[1600px] mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-4 mb-4">
-            <Link
-              href="/"
-              className="text-blue-400 hover:text-blue-300 text-sm"
-            >
-              ← Back to Dashboard
-            </Link>
+        <div className="mb-8 text-center">
+          <Link
+            href="/"
+            className="text-blue-400 hover:text-blue-300 inline-flex items-center gap-2 mb-4"
+          >
+            ← Back to Home
+          </Link>
+          <div className="flex items-center justify-center gap-3 mb-3">
+            <h1 className="text-4xl font-bold text-white">CrashLens Dashboard</h1>
+            <span className="px-3 py-1 bg-red-600 text-white text-sm font-semibold rounded">AMD ROCm</span>
           </div>
-          <h1 className="text-3xl font-bold text-white">Agent Runs</h1>
-          <p className="text-slate-400 mt-2">
-            Monitor autonomous agent execution and diagnose failures
-          </p>
+          <p className="text-slate-400">Monitor and diagnose ML workloads and AI agents on AMD GPUs</p>
+          <div className="flex items-center justify-center gap-6 mt-3 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Platform:</span>
+              <span className="text-white font-medium">AMD ROCm 5.7+</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Worker Type:</span>
+              <span className="text-white font-medium">AMD GPU Worker</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Metric Source:</span>
+              <span className="text-white font-medium">rocm-smi compatible</span>
+            </div>
+          </div>
         </div>
 
         {/* Navigation Tabs */}
         <div className="mb-6 border-b border-slate-700">
-          <div className="flex gap-8">
-            <Link href="/#dashboard-section" className="pb-4 text-slate-400 hover:text-white transition-colors">
-              ML Jobs
+          <div className="flex gap-8 justify-center">
+            <Link href="/dashboard" className="pb-4 text-slate-400 hover:text-white transition-colors">
+              GPU Workloads
             </Link>
             <div className="pb-4 border-b-2 border-blue-500 text-blue-400 font-medium">
               Agent Runs
             </div>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-blue-500/30 rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-blue-500/10 rounded-lg">
+                <Activity className="w-4 h-4 text-blue-400" />
+              </div>
+              <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Total Runs</span>
+            </div>
+            <div className="text-3xl font-bold text-white">{totalRuns}</div>
+          </div>
+
+          <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-red-500/30 rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:shadow-red-500/10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-red-500/10 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-red-400" />
+              </div>
+              <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Failed Runs</span>
+            </div>
+            <div className="text-3xl font-bold text-white">{failedRuns}</div>
+          </div>
+
+          <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-green-500/30 rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-green-500/10 rounded-lg">
+                <CheckCircle className="w-4 h-4 text-green-400" />
+              </div>
+              <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Success Rate</span>
+            </div>
+            <div className="text-3xl font-bold text-white">{successRate}%</div>
+          </div>
+
+          <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-purple-500/30 rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-purple-500/10 rounded-lg">
+                <Zap className="w-4 h-4 text-purple-400" />
+              </div>
+              <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Tool Calls</span>
+            </div>
+            <div className="text-3xl font-bold text-white">{totalToolCalls}</div>
+          </div>
+
+          <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-cyan-500/30 rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-cyan-500/10 rounded-lg">
+                <Brain className="w-4 h-4 text-cyan-400" />
+              </div>
+              <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Model Calls</span>
+            </div>
+            <div className="text-3xl font-bold text-white">{totalModelCalls}</div>
+          </div>
+
+          <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-orange-500/30 rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 bg-orange-500/10 rounded-lg">
+                <Clock className="w-4 h-4 text-orange-400" />
+              </div>
+              <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Avg Latency</span>
+            </div>
+            <div className="text-3xl font-bold text-white">{formatLatency(avgLatency)}</div>
           </div>
         </div>
 

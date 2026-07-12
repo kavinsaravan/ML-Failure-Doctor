@@ -139,6 +139,7 @@ func (db *DB) GetWorkloads() ([]Workload, error) {
 		SELECT id, name, type, status, failure_type, created_at, started_at,
 		       finished_at, runtime_seconds, exit_code, wasted_gpu_seconds
 		FROM workloads
+		WHERE type != 'AGENT_RUN'
 		ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -213,22 +214,22 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 
 	var total int
-	db.QueryRow("SELECT COUNT(*) FROM workloads").Scan(&total)
+	db.QueryRow("SELECT COUNT(*) FROM workloads WHERE type != 'AGENT_RUN'").Scan(&total)
 	stats["total_workloads"] = total
 
 	var failed int
-	db.QueryRow("SELECT COUNT(*) FROM workloads WHERE status = 'failed'").Scan(&failed)
+	db.QueryRow("SELECT COUNT(*) FROM workloads WHERE status = 'failed' AND type != 'AGENT_RUN'").Scan(&failed)
 	stats["failed_workloads"] = failed
 
 	var succeeded int
-	db.QueryRow("SELECT COUNT(*) FROM workloads WHERE status = 'succeeded'").Scan(&succeeded)
+	db.QueryRow("SELECT COUNT(*) FROM workloads WHERE status = 'succeeded' AND type != 'AGENT_RUN'").Scan(&succeeded)
 	stats["succeeded_workloads"] = succeeded
 
 	var wastedGPU float64
-	db.QueryRow("SELECT COALESCE(SUM(wasted_gpu_seconds), 0) FROM workloads WHERE status = 'failed'").Scan(&wastedGPU)
+	db.QueryRow("SELECT COALESCE(SUM(wasted_gpu_seconds), 0) FROM workloads WHERE status = 'failed' AND type != 'AGENT_RUN'").Scan(&wastedGPU)
 	stats["wasted_gpu_seconds"] = wastedGPU
 
-	rows, _ := db.Query("SELECT failure_type, COUNT(*) FROM workloads WHERE failure_type IS NOT NULL GROUP BY failure_type")
+	rows, _ := db.Query("SELECT failure_type, COUNT(*) FROM workloads WHERE failure_type IS NOT NULL AND type != 'AGENT_RUN' GROUP BY failure_type")
 	defer rows.Close()
 
 	failureTypes := make(map[string]int)

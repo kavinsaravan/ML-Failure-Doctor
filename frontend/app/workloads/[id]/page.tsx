@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Database,
   Cpu,
+  Loader2,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -73,14 +74,27 @@ export default function WorkloadDetail() {
   };
 
   const handleDiagnose = async () => {
+    console.log('handleDiagnose called');
     setDiagnosing(true);
     try {
-      const report = await api.diagnoseWorkload(params.id as string);
+      console.log('Calling diagnoseWorkload API for ID:', params.id);
+
+      // Add artificial delay to show loading state (minimum 2 seconds)
+      const [report] = await Promise.all([
+        api.diagnoseWorkload(params.id as string),
+        new Promise(resolve => setTimeout(resolve, 2000))
+      ]);
+
+      console.log('Received diagnosis report:', report);
       setDiagnosis(report);
-      loadWorkload();
+      await loadWorkload();
+      console.log('Workload reloaded');
+
+      // Reload the page to show fresh data
+      window.location.reload();
     } catch (error) {
       console.error('Failed to diagnose:', error);
-    } finally {
+      alert('Failed to run diagnosis: ' + (error as Error).message);
       setDiagnosing(false);
     }
   };
@@ -100,6 +114,7 @@ export default function WorkloadDetail() {
   };
 
   const getChartData = () => {
+    if (!metrics || metrics.length === 0) return [];
     return metrics.map((m, idx) => ({
       index: idx,
       memory: m.gpu_memory_percent,
@@ -109,7 +124,7 @@ export default function WorkloadDetail() {
   };
 
   const getPeakMemory = () => {
-    if (metrics.length === 0) return null;
+    if (!metrics || metrics.length === 0) return null;
     const peak = metrics.reduce((max, m) =>
       m.gpu_memory_percent > max.gpu_memory_percent ? m : max
     );
@@ -211,13 +226,18 @@ export default function WorkloadDetail() {
                 </div>
               )}
             </div>
-            {workload.status === 'failed' && !diagnosis && (
+            {workload.status === 'failed' && (
               <button
                 onClick={handleDiagnose}
                 disabled={diagnosing}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50"
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
               >
-                {diagnosing ? 'Diagnosing...' : 'Run AI Diagnosis'}
+                {diagnosing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Diagnosing...
+                  </>
+                ) : diagnosis ? 'Re-run Diagnosis' : 'Run AI Diagnosis'}
               </button>
             )}
           </div>
