@@ -134,6 +134,19 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(existing)
 }
 
+func (s *Server) DeleteWorkloadHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	_, err := s.DB.Exec("DELETE FROM workloads WHERE id = ?", id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name       string `json:"name"`

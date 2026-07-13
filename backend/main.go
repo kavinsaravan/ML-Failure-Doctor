@@ -45,6 +45,7 @@ func main() {
 	r.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}", server.GetWorkloadHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}", server.UpdateWorkloadHandler).Methods("PUT")
+	r.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
 	r.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
 	r.HandleFunc("/workloads/{id}/logs", server.GetWorkloadLogsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}/metrics", server.GetWorkloadMetricsHandler).Methods("GET")
