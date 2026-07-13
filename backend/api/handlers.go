@@ -88,20 +88,50 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	// Get existing workload
+	existing, err := s.DB.GetWorkload(id)
+	if err != nil {
+		http.Error(w, "Workload not found", http.StatusNotFound)
+		return
+	}
+
+	// Decode updates
 	var updates db.Workload
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := s.DB.UpdateWorkload(id, &updates); err != nil {
+	// Merge updates with existing data (only update non-nil fields)
+	if updates.Status != "" {
+		existing.Status = updates.Status
+	}
+	if updates.FailureType != nil {
+		existing.FailureType = updates.FailureType
+	}
+	if updates.RuntimeSeconds != nil {
+		existing.RuntimeSeconds = updates.RuntimeSeconds
+	}
+	if updates.ExitCode != nil {
+		existing.ExitCode = updates.ExitCode
+	}
+	if updates.WastedGPUSeconds != nil {
+		existing.WastedGPUSeconds = updates.WastedGPUSeconds
+	}
+	if updates.JobLogs != nil {
+		existing.JobLogs = updates.JobLogs
+	}
+	if updates.GPUMetrics != nil {
+		existing.GPUMetrics = updates.GPUMetrics
+	}
+
+	if err := s.DB.UpdateWorkload(id, existing); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	workload, _ := s.DB.GetWorkload(id)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(workload)
+	json.NewEncoder(w).Encode(existing)
 }
 
 func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
