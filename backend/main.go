@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"crashlens/api"
 	"crashlens/db"
@@ -58,11 +59,21 @@ func main() {
 	r.HandleFunc("/agent-runs/{id}/diagnose", server.DiagnoseAgentRunHandler).Methods("POST")
 	r.HandleFunc("/agent-steps", server.CreateAgentStepHandler).Methods("POST")
 
-	// CORS
+	// CORS - Allow all Vercel preview deployments by using AllowOriginFunc
 	handler := cors.New(cors.Options{
-		AllowedOrigins: []string{"http://localhost:3000", "http://localhost:3001"},
+		AllowOriginFunc: func(origin string) bool {
+			// Allow localhost
+			if origin == "http://localhost:3000" || origin == "http://localhost:3001" {
+				return true
+			}
+			// Allow any Vercel deployment
+			if strings.HasPrefix(origin, "https://frontend-") && strings.Contains(origin, ".vercel.app") {
+				return true
+			}
+			return false
+		},
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Content-Type", "Authorization"},
+		AllowedHeaders: []string{"Content-Type", "Authorization", "ngrok-skip-browser-warning"},
 	}).Handler(r)
 
 	port := os.Getenv("PORT")
