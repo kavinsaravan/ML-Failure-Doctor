@@ -84,6 +84,26 @@ func (s *Server) GetWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(workload)
 }
 
+func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var updates db.Workload
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.DB.UpdateWorkload(id, &updates); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	workload, _ := s.DB.GetWorkload(id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(workload)
+}
+
 func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name       string `json:"name"`
