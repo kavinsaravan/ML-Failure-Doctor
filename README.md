@@ -100,65 +100,64 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
 
 ```
 ML-Failure-Doctor/
-├── backend/                    # Go Backend Service
-│   ├── main.go                 # Application entry point
-│   ├── api/                    # REST API handlers
-│   │   ├── handlers.go         # Workload & agent endpoints
-│   │   └── server.go           # Server configuration
-│   ├── db/                     # Database layer
-│   │   └── database.go         # SQLite operations
-│   ├── fireworks/              # AI integration
-│   │   └── client.go           # Gemma model client
-│   ├── gpu/                    # GPU metrics collection
-│   │   ├── collector.go        # Metric collector interface
-│   │   ├── rocm.go             # ROCm/rocm-smi integration
-│   │   └── simulator.go        # Simulated metrics for dev
-│   ├── jobs/                   # Job execution engine
-│   │   ├── runner.go           # Job runner
-│   │   └── templates.go        # Test job templates
-│   └── go.mod                  # Go dependencies
+├── backend/                    
+│   ├── main.go                 
+│   ├── api/                    
+│   │   ├── handlers.go         
+│   │   └── server.go           
+│   ├── db/                     
+│   │   └── database.go         
+│   ├── fireworks/              
+│   │   └── client.go           
+│   ├── gpu/                    
+│   │   ├── collector.go        
+│   │   ├── rocm.go             
+│   │   └── simulator.go        
+│   ├── jobs/                   
+│   │   ├── runner.go           
+│   │   └── templates.go        
+│   └── go.mod                  
 │
-├── frontend/                   # Next.js Dashboard
-│   ├── app/                    # App Router pages
-│   │   ├── page.tsx            # Landing page
-│   │   ├── dashboard/          # Main dashboard
-│   │   │   └── page.tsx        # GPU workloads view
-│   │   ├── workloads/[id]/     # Workload details
-│   │   │   └── page.tsx        # Logs, metrics, diagnosis
-│   │   └── agent-runs/         # Agent observability
-│   │       ├── page.tsx        # Agent runs list
-│   │       └── [id]/page.tsx   # Execution trace view
-│   ├── components/             # React components
-│   ├── lib/                    # Utilities
-│   │   └── api.ts              # API client
-│   ├── public/                 # Static assets
-│   ├── package.json            # Node dependencies
-│   └── next.config.ts          # Next.js configuration
+├── frontend/                   
+│   ├── app/                    
+│   │   ├── page.tsx            
+│   │   ├── dashboard/          
+│   │   │   └── page.tsx        
+│   │   ├── workloads/[id]/    
+│   │   │   └── page.tsx        
+│   │   └── agent-runs/         
+│   │       ├── page.tsx       
+│   │       └── [id]/page.tsx   
+│   ├── components/             
+│   ├── lib/                    
+│   │   └── api.ts              
+│   ├── public/                
+│   ├── package.json           
+│   └── next.config.ts          
 │
-├── mcp-server/                 # Model Context Protocol Server
-│   ├── index.js                # MCP server implementation
-│   ├── tools/                  # MCP tool definitions
-│   │   ├── workload_logs.js    # Get workload logs tool
-│   │   ├── gpu_metrics.js      # Get GPU metrics tool
-│   │   └── diagnosis.js        # Get diagnosis tool
-│   └── package.json            # Node dependencies
+├── mcp-server/                 
+│   ├── index.js                
+│   ├── tools/                  
+│   │   ├── workload_logs.js    
+│   │   ├── gpu_metrics.js      
+│   │   └── diagnosis.js        
+│   └── package.json            
+├── notebooks/                  
+│   ├── CrashLens_AMD_GPU_Demo.ipynb  
+│   └── README.md               
 │
-├── notebooks/                  # 🆕 Jupyter Notebooks
-│   ├── CrashLens_AMD_GPU_Demo.ipynb  # AMD GPU testing notebook
-│   └── README.md               # Notebook usage guide
+├── jobs/                       
+│   ├── gpu_oom.py              
+│   ├── dependency_error.py     
+│   ├── missing_checkpoint.py   
+│   └── successful_job.py       
 │
-├── jobs/                       # Job templates (auto-generated)
-│   ├── gpu_oom.py              # GPU OOM test script
-│   ├── dependency_error.py     # Dependency error test
-│   ├── missing_checkpoint.py   # Missing file test
-│   └── successful_job.py       # Successful training test
-│
-├── docker-compose.yml          # Multi-service orchestration
-├── Dockerfile                  # Backend container
-├── frontend/Dockerfile         # Frontend container
-├── .gitignore                  # Git ignore rules
-├── vercel.json                 # Vercel deployment config
-└── README.md                   # This file
+├── docker-compose.yml          
+├── Dockerfile                  
+├── frontend/Dockerfile         
+├── .gitignore                  
+├── vercel.json                 
+└── README.md                   
 ```
 
 ## 🛠️ Tech Stack
