@@ -180,8 +180,6 @@ ML-Failure-Doctor/
 
 ### Prerequisites
 
-**Choose one of these options:**
-
 #### Option A: Docker (Recommended for Quick Testing)
 - **Docker** and **Docker Compose** installed
 - **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
@@ -395,33 +393,6 @@ curl -X POST http://localhost:8080/workloads/1/diagnose
 # List all workloads
 curl http://localhost:8080/workloads
 ```
----
-
-## 🐳 Docker Configuration
-
-### Multi-Stage Builds
-Optimized for production with minimal image sizes:
-
-- **Backend**: Go binary in Alpine Linux (~15MB)
-- **Frontend**: Next.js standalone output (~100MB)
-- **MCP Server**: Node.js production build (~50MB)
-
-### Services Architecture
-
-| Service | Port | Description | Health Check |
-|---------|------|-------------|--------------|
-| `backend` | 8080 | Go REST API + SQLite | ✅ /health endpoint |
-| `frontend` | 3000 | Next.js production build | Depends on backend |
-| `mcp-server` | - | MCP tool server (stdio) | Depends on backend |
-
-### Volume Persistence
-```yaml
-volumes:
-  crashlens-data:      # SQLite database
-  ./jobs:              # ML job scripts (mounted)
-  ./agents:            # Agent configurations (mounted)
-```
-
 ---
 
 ### Environment Variables
