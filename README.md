@@ -56,36 +56,6 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
 
 ---
 
-## 🚀 AMD ROCm Platform Integration
-
-**CrashLens is purpose-built for AMD GPU infrastructure** with deep ROCm ecosystem integration:
-
-### Native AMD Support
-- ✅ **HIP Error Detection** - Recognizes and diagnoses HIP out-of-memory and runtime errors
-- ✅ **rocm-smi Metrics** - Real-time GPU metrics via AMD's `rocm-smi` utility
-- ✅ **ROCm 5.7+ Compatible** - Tested with latest AMD ROCm runtime
-- ✅ **AMD Developer Cloud Ready** - Designed for deployment on AMD infrastructure
-- ✅ **Intelligent Fallback** - Seamless switch between real rocm-smi and simulated metrics for development
-
-### AMD-Specific Features
-```go
-// Automatic AMD GPU detection and metric collection
-if ROCmAvailable() {
-    collector = NewROCmSMICollector()  // Native rocm-smi integration
-} else {
-    collector = NewSimulatedCollector()  // Development fallback
-}
-```
-
-### ROCm Error Patterns Detected
-- `HIP out of memory` errors
-- ROCm runtime failures
-- GPU driver version mismatches
-- AMD GPU utilization bottlenecks
-- Memory bandwidth saturation
-
----
-
 ## 🏗️ Architecture
 
 ```
@@ -452,73 +422,7 @@ volumes:
   ./agents:            # Agent configurations (mounted)
 ```
 
-### Environment Variables
-
-Create `.env` file:
-```env
-FIREWORKS_API_KEY=your_fireworks_api_key_here
-PORT=8080
-NODE_ENV=production
-```
-
 ---
-
-## 🌐 Deployment
-
-### Vercel Deployment (Frontend)
-
-The frontend is deployed on Vercel for easy access:
-
-**Live Demo**: https://frontend-zeta-eight-92.vercel.app
-
-**Deploy Your Own:**
-
-```bash
-# Install Vercel CLI
-npm install -g vercel
-
-# Login to Vercel
-vercel login
-
-# Deploy from the frontend directory
-cd frontend
-vercel --prod
-
-# Set environment variable for backend API
-vercel env add NEXT_PUBLIC_API_URL production
-# Enter your backend URL (e.g., https://your-backend.fly.io or ngrok URL)
-```
-
-### Backend Deployment Options
-
-**Option 1: Railway** (Recommended for Go backends)
-1. Create account at [railway.app](https://railway.app)
-2. Connect your GitHub repository
-3. Add `FIREWORKS_API_KEY` environment variable
-4. Railway auto-detects Go and deploys
-
-**Option 2: Fly.io**
-```bash
-# Install flyctl
-curl -L https://fly.io/install.sh | sh
-
-# Login and deploy
-cd backend
-fly launch
-fly secrets set FIREWORKS_API_KEY=your_key_here
-fly deploy
-```
-
-**Option 3: ngrok (Quick Testing)**
-```bash
-# Start backend locally
-cd backend && go run .
-
-# In another terminal, expose with ngrok
-ngrok http 8080
-
-# Use the ngrok URL (e.g., https://xyz.ngrok-free.dev) as NEXT_PUBLIC_API_URL
-```
 
 ### Environment Variables
 
