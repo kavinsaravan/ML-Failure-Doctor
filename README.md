@@ -12,22 +12,22 @@
 
 ---
 
-## 🎯 Why CrashLens?
+## Why CrashLens?
 
 **The Problem:** ML engineers spend hours debugging GPU failures—deciphering cryptic HIP errors, analyzing memory dumps, and manually correlating logs with metrics.
 
 **The Solution:** CrashLens diagnoses GPU workload failures in **seconds**, not hours:
-- 🤖 **AI-Powered Diagnosis** - Gemma model analyzes logs and provides actionable fixes
-- 📊 **Real-time AMD GPU Metrics** - Native `rocm-smi` integration for memory, utilization, and temperature
-- 🔬 **Agent Observability** - Track tool calls, model interactions, and execution traces
-- 💰 **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
-- 🐳 **Production-Ready** - Fully containerized with Docker
+-  **AI-Powered Diagnosis** - Gemma model analyzes logs and provides actionable fixes
+-  **Real-time AMD GPU Metrics** - Native `rocm-smi` integration for memory, utilization, and temperature
+-  **Agent Observability** - Track tool calls, model interactions, and execution traces
+-  **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
+-  **Production-Ready** - Fully containerized with Docker
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
-### 🎯 GPU Workload Diagnosis
+###  GPU Workload Diagnosis
 - **Automatic Failure Classification**: GPU OOM, missing checkpoints, dependency errors, data path errors, timeouts, ROCm runtime errors
 - **AI-Powered Doctor**: Gemma-powered diagnosis via Fireworks AI providing:
   - Root cause analysis
@@ -37,13 +37,13 @@
 - **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring via `rocm-smi`
 - **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
 
-### 🤖 AI Agent Observability
+###  AI Agent Observability
 - **Execution Traces**: Visual timeline of tool calls, model calls, and decision points
 - **Performance Metrics**: Track latency, token usage, and model call patterns
 - **Failure Detection**: Identify infinite loops, API errors, and reasoning failures
 - **Unified Dashboard**: Same diagnostic interface for both GPU jobs and agent runs
 
-### 🔧 Model Context Protocol (MCP) Integration
+###  Model Context Protocol (MCP) Integration
 CrashLens exposes diagnostic capabilities through standardized MCP tools:
 - `get_workload_logs` - Retrieve execution logs and error traces
 - `get_gpu_metrics` - Access GPU memory, utilization, temperature data
@@ -56,7 +56,7 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -96,7 +96,7 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 ML-Failure-Doctor/
@@ -175,7 +175,7 @@ ML-Failure-Doctor/
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 
@@ -191,7 +191,7 @@ ML-Failure-Doctor/
 
 ---
 
-### Option 1: Docker (Recommended) 🐳
+### Option 1: Docker (Recommended) 
 
 **Step-by-step setup:**
 
@@ -215,10 +215,10 @@ open http://localhost:3000
 ```
 
 **What's Running:**
-- 🎨 **Frontend Dashboard**: http://localhost:3000
-- 🔧 **Backend API**: http://localhost:8080
-- ✅ **Health Check**: http://localhost:8080/health
-- 💾 **Database**: SQLite (auto-created in Docker volume)
+-  **Frontend Dashboard**: http://localhost:3000
+-  **Backend API**: http://localhost:8080
+-  **Health Check**: http://localhost:8080/health
+-  **Database**: SQLite (auto-created in Docker volume)
 
 **To Stop:**
 ```bash
