@@ -292,50 +292,6 @@ npm install
 # Start the MCP server
 npm start
 ```
-
----
-
-### 🎬 Create Your First Workload
-
-**Via Dashboard (Easiest Method):**
-
-1. **Open the Dashboard**
-   - Navigate to http://localhost:3000
-   - Click "Get Started" to enter the dashboard
-
-2. **Generate Test Workloads**
-   - Look for the "Quick Test Jobs" section
-   - Click on any test button:
-     - **GPU OOM Test** - Simulates out-of-memory failure
-     - **Dependency Error** - Missing Python package
-     - **Missing Checkpoint** - File not found error
-     - **Successful Job** - Completes without errors
-
-3. **View Results**
-   - The workload appears in the table below
-   - Click "View Details" to see logs and GPU metrics
-   - For failed jobs, click "Run AI Diagnosis" to get AI-powered fixes
-
-**Via API (Advanced):**
-
-Test the backend directly with curl:
-
-```bash
-# Check backend is running
-curl http://localhost:8080/health
-
-# Create a test workload
-curl -X POST http://localhost:8080/workloads/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "template": "gpu_oom",
-    "type": "ML_JOB"
-  }'
-
-# List all workloads
-curl http://localhost:8080/workloads
-```
-
 ---
 
 ## 🔌 API Reference
