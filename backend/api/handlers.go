@@ -168,13 +168,13 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	// Map template to script path if provided
 	if req.Template != "" && req.ScriptPath == "" {
 		templateMap := map[string]string{
-			"gpu_oom":            "../jobs/gpu_oom.py",
-			"missing_checkpoint": "../jobs/missing_checkpoint.py",
-			"dependency_error":   "../jobs/dependency_error.py",
-			"data_path_error":    "../jobs/data_path_error.py",
-			"timeout":            "../jobs/timeout.py",
-			"successful":         "../jobs/successful_training.py",
-			"tool_loop_agent":    "../agents/tool_loop_agent.py",
+			"gpu_oom":            "./jobs/gpu_oom.py",
+			"missing_checkpoint": "./jobs/missing_checkpoint.py",
+			"dependency_error":   "./jobs/dependency_error.py",
+			"data_path_error":    "./jobs/data_path_error.py",
+			"timeout":            "./jobs/timeout.py",
+			"successful":         "./jobs/successful_training.py",
+			"tool_loop_agent":    "./agents/tool_loop_agent.py",
 		}
 
 		if path, ok := templateMap[req.Template]; ok {

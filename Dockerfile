@@ -6,12 +6,12 @@ RUN apk add --no-cache gcc musl-dev sqlite-dev
 
 WORKDIR /app
 
-# Copy go mod files
-COPY go.mod go.sum ./
+# Copy backend go mod files
+COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
-# Copy all source code
-COPY . .
+# Copy all backend source code
+COPY backend/ ./
 
 # Build the application
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o crashlens .
@@ -20,15 +20,16 @@ RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o crashlens .
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk --no-cache add ca-certificates sqlite-libs
+RUN apk --no-cache add ca-certificates sqlite-libs python3
 
 WORKDIR /root
 
 # Copy binary from builder
 COPY --from=builder /app/crashlens .
 
-# Copy jobs and agents directories (will be at root level when deployed)
-RUN mkdir -p ./jobs ./agents
+# Copy jobs and agents directories
+COPY jobs ./jobs
+COPY agents ./agents
 
 # Expose port
 EXPOSE 8080
