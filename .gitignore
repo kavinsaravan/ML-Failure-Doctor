@@ -31,3 +31,7 @@ backend/crashlens.db
 # Logs
 *.log
 npm-debug.log*
+
+# Private documentation
+GET_STARTED_NOW.md
+docs/AMD_CLOUD_APPLICATION_TEMPLATE.txt
