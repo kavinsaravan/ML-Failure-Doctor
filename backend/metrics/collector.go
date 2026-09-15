@@ -113,6 +113,84 @@ func (c *ROCmSMICollector) Collect() (*GPUMetric, error) {
 	return metric, nil
 }
 
+// NVIDIASMICollector collects real metrics from NVIDIA GPUs using nvidia-smi
+type NVIDIASMICollector struct {
+	deviceID int
+}
+
+// NewNVIDIASMICollector creates a collector for NVIDIA CUDA GPUs
+func NewNVIDIASMICollector(deviceID int) *NVIDIASMICollector {
+	return &NVIDIASMICollector{deviceID: deviceID}
+}
+
+func (c *NVIDIASMICollector) IsAvailable() bool {
+	// Check if nvidia-smi is available
+	cmd := exec.Command("nvidia-smi", "--version")
+	err := cmd.Run()
+	return err == nil
+}
+
+func (c *NVIDIASMICollector) Name() string {
+	return "NVIDIA-SMI"
+}
+
+func (c *NVIDIASMICollector) Collect() (*GPUMetric, error) {
+	// Use nvidia-smi with CSV format for easy parsing
+	// Query: memory.used, memory.total, utilization.gpu, temperature.gpu
+	cmd := exec.Command("nvidia-smi",
+		"--query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu",
+		"--format=csv,noheader,nounits",
+		fmt.Sprintf("--id=%d", c.deviceID))
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run nvidia-smi: %w", err)
+	}
+
+	// Parse CSV output: "memUsed, memTotal, utilization, temperature"
+	// Example: "1024, 16384, 85, 65"
+	line := strings.TrimSpace(string(output))
+	parts := strings.Split(line, ",")
+
+	if len(parts) < 4 {
+		return nil, fmt.Errorf("unexpected nvidia-smi output format: %s", line)
+	}
+
+	memUsed, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse memory used: %w", err)
+	}
+
+	memTotal, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse memory total: %w", err)
+	}
+
+	utilization, err := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse utilization: %w", err)
+	}
+
+	temperature, err := strconv.ParseInt(strings.TrimSpace(parts[3]), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse temperature: %w", err)
+	}
+
+	memPercent := 0.0
+	if memTotal > 0 {
+		memPercent = (memUsed / memTotal) * 100
+	}
+
+	return &GPUMetric{
+		Timestamp:             time.Now(),
+		GPUMemoryUsedMB:       memUsed,
+		GPUMemoryTotalMB:      memTotal,
+		GPUMemoryPercent:      memPercent,
+		GPUUtilizationPercent: utilization,
+		TemperatureCelsius:    int(temperature),
+	}, nil
+}
+
 // SimulatedCollector generates realistic simulated metrics for demo purposes
 type SimulatedCollector struct {
 	baseMemoryMB  float64
@@ -150,7 +228,7 @@ func (c *SimulatedCollector) IsAvailable() bool {
 }
 
 func (c *SimulatedCollector) Name() string {
-	return "Simulated (ROCm-compatible)"
+	return "Simulated GPU"
 }
 
 func (c *SimulatedCollector) Collect() (*GPUMetric, error) {
@@ -196,14 +274,21 @@ func (c *SimulatedCollector) Collect() (*GPUMetric, error) {
 }
 
 // GetCollector returns the appropriate collector based on environment
+// It auto-detects GPU type: NVIDIA (nvidia-smi), AMD (rocm-smi), or simulated
 func GetCollector(scenario string) MetricCollector {
-	// Try ROCm collector first
+	// Try NVIDIA collector first (most common)
+	nvidiaCollector := NewNVIDIASMICollector(0)
+	if nvidiaCollector.IsAvailable() {
+		return nvidiaCollector
+	}
+
+	// Try AMD ROCm collector
 	rocmCollector := NewROCmSMICollector(0)
 	if rocmCollector.IsAvailable() {
 		return rocmCollector
 	}
 
-	// Fallback to simulated collector for demo
+	// Fallback to simulated collector for demo/testing
 	return NewSimulatedCollector(scenario)
 }
 

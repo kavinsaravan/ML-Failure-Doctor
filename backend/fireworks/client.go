@@ -156,9 +156,10 @@ func (c *Client) DiagnoseFailure(workloadData string) (*DiagnosisResult, error) 
 	}
 
 	// Create the diagnosis prompt
-	systemPrompt := `You are an ML infrastructure debugging assistant specializing in AMD GPU and ROCm workloads.
+	systemPrompt := `You are an ML infrastructure debugging assistant specializing in GPU workloads across all platforms.
 Analyze the workload failure data and provide a comprehensive diagnosis.
-Focus on AMD-specific issues like HIP/ROCm errors, GPU memory management, and driver compatibility.`
+You support NVIDIA GPUs (CUDA/cuDNN), AMD GPUs (ROCm/HIP), and cloud GPU platforms (AWS, Google Cloud, Azure).
+Focus on GPU-specific issues like memory management, driver compatibility, framework compatibility, and runtime errors.`
 
 	userPrompt := `Given the following workload failure data, diagnose the issue:
 
