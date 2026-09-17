@@ -131,9 +131,6 @@ ML-Failure-Doctor/
 │   ├── missing_checkpoint.py
 │   └── successful_training.py
 │
-├── docs/                       # Documentation
-│   └── AMD_DEVELOPER_CLOUD_QUICKSTART.md
-│
 ├── docker-compose.yml
 ├── Dockerfile
 └── README.md
