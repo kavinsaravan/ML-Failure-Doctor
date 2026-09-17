@@ -113,7 +113,7 @@ export default function Dashboard() {
             <h1 className="text-4xl font-bold text-white">CrashLens Dashboard</h1>
             <span className="px-3 py-1 bg-red-600 text-white text-sm font-semibold rounded">AMD ROCm</span>
           </div>
-          <p className="text-slate-400">Monitor and diagnose ML workloads and AI agents on AMD GPUs</p>
+          <p className="text-slate-400">Monitor and diagnose GPU workloads across all platforms</p>
           <div className="flex items-center justify-center gap-6 mt-3 text-sm">
             <div className="flex items-center gap-2">
               <span className="text-slate-500">Platform:</span>
@@ -136,9 +136,6 @@ export default function Dashboard() {
             <div className="pb-4 border-b-2 border-blue-500 text-blue-400 font-medium">
               GPU Workloads
             </div>
-            <Link href="/agent-runs" className="pb-4 text-slate-400 hover:text-white transition-colors">
-              Agent Runs
-            </Link>
           </div>
         </div>
 
