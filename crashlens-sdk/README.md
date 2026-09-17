@@ -1,6 +1,6 @@
 # CrashLens Python SDK
 
-Track real ML workloads and AI agents with automatic failure reporting and AI-powered diagnosis.
+Track GPU workloads with automatic failure reporting and AI-powered diagnosis.
 
 ## Installation
 
@@ -10,8 +10,6 @@ pip install -e .
 ```
 
 ## Quick Start
-
-### 1. Track ML Training Jobs
 
 ```python
 from crashlens import WorkloadTracker
@@ -27,27 +25,8 @@ with tracker.track("Training ResNet-50"):
 @tracker.track_function("Fine-tuning BERT")
 def train():
     trainer.train()
-    
+
 train()
-```
-
-### 2. Track AI Agents
-
-```python
-from crashlens.agent_tracker import AgentTracer
-
-tracer = AgentTracer("https://your-backend.railway.app")
-
-# Start tracking
-tracer.start_agent_run("MyAgent", "Research quantum computing")
-
-# Log agent steps
-tracer.tool_call("web_search", args_json, result_json, latency_ms=500)
-tracer.model_call(prompt, response, tokens=100, latency_ms=800)
-tracer.decision("Should I continue?", "Yes")
-
-# Finish
-tracer.finish(status="completed")
 ```
 
 ## Real-World Examples
@@ -66,9 +45,9 @@ with tracker.track("GPT-2 Fine-tuning"):
     trainer.train()
 ```
 
-If training fails (OOM, CUDA error, etc.), CrashLens will:
+If training fails (GPU OOM, CUDA/ROCm error, etc.), CrashLens will:
 - ✅ Capture the full error traceback
-- ✅ Record GPU metrics
+- ✅ Record GPU metrics (NVIDIA/AMD)
 - ✅ Classify the failure type
 - ✅ Provide AI-powered diagnosis with fixes
 
@@ -102,27 +81,6 @@ with tracker.track("BERT Fine-tuning - MRPC"):
     trainer.train()
 ```
 
-### LangChain Agents
-
-```python
-from langchain.agents import initialize_agent
-from crashlens.agent_tracker import AgentTracer
-
-tracer = AgentTracer("https://your-backend.railway.app")
-
-tracer.start_agent_run("CustomerSupport", "Handle user query")
-
-# Your LangChain agent code
-agent = initialize_agent(tools, llm, agent="zero-shot-react-description")
-response = agent.run("What's the weather?")
-
-# Log each step
-tracer.tool_call("get_weather", args, result)
-tracer.model_call(prompt, response)
-tracer.final_response(response)
-tracer.finish("completed")
-```
-
 ## Features
 
 ### Automatic Failure Detection
@@ -151,26 +109,17 @@ print(diagnosis["recommended_fixes"])
 # ...
 ```
 
-### Agent Observability
-
-Track every step of your AI agent:
-- Tool calls with inputs/outputs
-- Model calls with token counts
-- Decision points
-- Errors and failures
-- Total latency and costs
-
 ## Dashboard
 
-View all workloads and agents at:
+View all workloads at:
 ```
 https://your-frontend.vercel.app/dashboard
 ```
 
 Features:
-- Real-time monitoring
-- Failure classification
-- GPU metrics visualization
+- Real-time GPU monitoring
+- Automatic failure classification
+- GPU metrics visualization (memory, utilization, temperature)
 - AI-powered recommendations
 - Cost tracking (wasted GPU-seconds)
 
@@ -274,10 +223,7 @@ tracker._update_workload(
 ## Examples Directory
 
 See `examples/` for more:
-- `pytorch_training.py` - PyTorch model training
-- `langchain_agent.py` - LangChain agent tracking
-- `distributed_training.py` - Multi-GPU training
-- `failure_scenarios.py` - Common failure patterns
+- `pytorch_training.py` - PyTorch model training with GPU tracking
 
 ## Support
 

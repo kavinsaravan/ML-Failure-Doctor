@@ -1,23 +1,24 @@
-# 🔍 CrashLens - AI-Powered Reliability Platform for GPUs
+# 🔍 CrashLens - AI-Powered GPU Workload Failure Diagnosis
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![AMD ROCm](https://img.shields.io/badge/AMD-ROCm%205.7%2B-red.svg)
+![NVIDIA CUDA](https://img.shields.io/badge/NVIDIA-CUDA-76B900.svg)
+![AMD ROCm](https://img.shields.io/badge/AMD-ROCm-red.svg)
 ![Go](https://img.shields.io/badge/Go-1.22-00ADD8.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)
 
-**CrashLens** is an intelligent failure diagnosis and observability platform designed for **GPU workloads**. It combines real-time GPU metrics from `rocm-smi`, AI-powered root cause analysis, and comprehensive observability for both ML training jobs and AI agent executions.
+**CrashLens** is an intelligent failure diagnosis platform designed for **GPU workloads**. It combines real-time GPU metrics collection (nvidia-smi/rocm-smi), AI-powered root cause analysis, and comprehensive observability for ML training jobs across all GPU platforms.
 
 ---
 
 ## Why CrashLens?
 
-**The Problem:** ML engineers spend hours debugging GPU failures—deciphering cryptic HIP errors, analyzing memory dumps, and manually correlating logs with metrics.
+**The Problem:** ML engineers spend hours debugging GPU failures—deciphering cryptic CUDA/HIP errors, analyzing memory dumps, and manually correlating logs with metrics.
 
 **The Solution:** CrashLens diagnoses GPU workload failures in **seconds**, not hours:
 -  **AI-Powered Diagnosis** - Gemma model analyzes logs and provides actionable fixes
--  **Real-time AMD GPU Metrics** - Native `rocm-smi` integration for memory, utilization, and temperature
--  **Agent Observability** - Track tool calls, model interactions, and execution traces
+-  **Universal GPU Support** - Works with NVIDIA (nvidia-smi), AMD (rocm-smi), and cloud platforms
+-  **Real-time Metrics** - Live GPU memory, utilization, and temperature monitoring
 -  **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
 -  **Production-Ready** - Fully containerized with Docker
 
@@ -26,20 +27,15 @@
 ##  Key Features
 
 ###  GPU Workload Diagnosis
-- **Automatic Failure Classification**: GPU OOM, missing checkpoints, dependency errors, data path errors, timeouts, ROCm runtime errors
+- **Automatic Failure Classification**: GPU OOM, missing checkpoints, dependency errors, data path errors, timeouts, CUDA/ROCm runtime errors
 - **AI-Powered Doctor**: Gemma-powered diagnosis via Fireworks AI providing:
   - Root cause analysis
   - Evidence extraction from logs
   - Recommended fixes with retry safety assessment
   - Prevention strategies
-- **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring via `rocm-smi`
+- **Universal GPU Support**: Auto-detects NVIDIA (nvidia-smi) or AMD (rocm-smi) GPUs
+- **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring
 - **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
-
-###  AI Agent Observability
-- **Execution Traces**: Visual timeline of tool calls, model calls, and decision points
-- **Performance Metrics**: Track latency, token usage, and model call patterns
-- **Failure Detection**: Identify infinite loops, API errors, and reasoning failures
-- **Unified Dashboard**: Same diagnostic interface for both GPU jobs and agent runs
 
 ###  Model Context Protocol (MCP) Integration
 CrashLens exposes diagnostic capabilities through standardized MCP tools:
@@ -58,25 +54,20 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     GPU Workload / Agent Run                │
+│                       GPU Workload                          │
+│              (PyTorch, TensorFlow, etc.)                    │
 └─────────────────┬───────────────────────────────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│           Log + Metric + Trace Collector                    │
-│           (rocm-smi + Python + Agent Traces)                │
+│            Log + GPU Metric Collector                       │
+│        (nvidia-smi / rocm-smi + Python SDK)                 │
 └─────────────────┬───────────────────────────────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
 │          Rule-Based Failure Classifier                      │
-│          (Pattern matching + Error detection)               │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────────────────────┐
-│               MCP Tool Server                               │
-│          (Standardized diagnostic tools)                    │
+│      (GPU OOM, CUDA/ROCm errors, Dependencies)              │
 └─────────────────┬───────────────────────────────────────────┘
                   │
                   ▼
@@ -98,64 +89,56 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
 
 ```
 ML-Failure-Doctor/
-├── backend/                    
-│   ├── main.go                 
-│   ├── api/                    
-│   │   ├── handlers.go         
-│   │   └── server.go           
-│   ├── db/                     
-│   │   └── database.go         
-│   ├── fireworks/              
-│   │   └── client.go           
-│   ├── gpu/                    
-│   │   ├── collector.go        
-│   │   ├── rocm.go             
-│   │   └── simulator.go        
-│   ├── jobs/                   
-│   │   ├── runner.go           
-│   │   └── templates.go        
-│   └── go.mod                  
+├── backend/                    # Go backend API
+│   ├── main.go                 # Entry point
+│   ├── api/                    # HTTP handlers
+│   │   └── handlers.go
+│   ├── db/                     # Database layer
+│   │   └── database.go
+│   ├── fireworks/              # Fireworks AI client
+│   │   └── client.go
+│   ├── metrics/                # GPU metrics collection
+│   │   └── collector.go        # nvidia-smi/rocm-smi
+│   ├── classifier/             # Failure classification
+│   │   └── classifier.go
+│   ├── diagnosis/              # AI diagnosis logic
+│   │   └── diagnosis.go
+│   ├── runner/                 # Workload execution
+│   │   └── runner.go
+│   └── go.mod
 │
-├── frontend/                   
-│   ├── app/                    
-│   │   ├── page.tsx            
-│   │   ├── dashboard/          
-│   │   │   └── page.tsx        
-│   │   ├── workloads/[id]/    
-│   │   │   └── page.tsx        
-│   │   └── agent-runs/         
-│   │       ├── page.tsx       
-│   │       └── [id]/page.tsx   
-│   ├── components/             
-│   ├── lib/                    
-│   │   └── api.ts              
-│   ├── public/                
-│   ├── package.json           
-│   └── next.config.ts          
+├── frontend/                   # Next.js dashboard
+│   ├── app/
+│   │   ├── page.tsx
+│   │   ├── dashboard/          # Main dashboard
+│   │   │   └── page.tsx
+│   │   └── workloads/[id]/     # Workload details
+│   │       └── page.tsx
+│   ├── components/             # React components
+│   ├── lib/
+│   │   └── api.ts              # API client
+│   └── package.json
 │
-├── mcp-server/                 
-│   ├── index.js                
-│   ├── tools/                  
-│   │   ├── workload_logs.js    
-│   │   ├── gpu_metrics.js      
-│   │   └── diagnosis.js        
-│   └── package.json            
-├── notebooks/                  
-│   ├── CrashLens_AMD_GPU_Demo.ipynb  
-│   └── README.md               
+├── crashlens-sdk/              # Python SDK
+│   ├── crashlens/
+│   │   ├── __init__.py
+│   │   └── workload_tracker.py # Track GPU workloads
+│   ├── examples/
+│   │   └── pytorch_training.py
+│   └── setup.py
 │
-├── jobs/                       
-│   ├── gpu_oom.py              
-│   ├── dependency_error.py     
-│   ├── missing_checkpoint.py   
-│   └── successful_job.py       
+├── jobs/                       # Test workload scripts
+│   ├── gpu_oom.py
+│   ├── dependency_error.py
+│   ├── missing_checkpoint.py
+│   └── successful_training.py
 │
-├── docker-compose.yml          
-├── Dockerfile                  
-├── frontend/Dockerfile         
-├── .gitignore                  
-├── vercel.json                 
-└── README.md                   
+├── docs/                       # Documentation
+│   └── AMD_DEVELOPER_CLOUD_QUICKSTART.md
+│
+├── docker-compose.yml
+├── Dockerfile
+└── README.md
 ```
 
 ## 🛠️ Tech Stack
@@ -166,8 +149,7 @@ ML-Failure-Doctor/
 | **Backend** | Go 1.22, Gorilla Mux | High-performance REST API |
 | **Database** | SQLite | Lightweight, embedded persistence |
 | **AI Model** | Gemma via Fireworks AI | Intelligent failure diagnosis |
-| **GPU Platform** | **AMD ROCm 5.7+** | GPU metrics and error detection |
-| **Tool Protocol** | Model Context Protocol (MCP) | Standardized AI tool interface |
+| **GPU Platform** | **NVIDIA CUDA / AMD ROCm** | Universal GPU metrics collection |
 | **Visualization** | Recharts | GPU metrics and performance charts |
 | **Containerization** | Docker, Docker Compose | Production-ready deployment |
 
@@ -302,20 +284,10 @@ POST   /workloads               # Create a new workload
 POST   /workloads/run           # Create and run workload from template
 GET    /workloads/{id}          # Get workload details with metrics
 PUT    /workloads/{id}          # Update workload status/data
+DELETE /workloads/{id}          # Delete a workload
 GET    /workloads/{id}/logs     # Get workload execution logs
 GET    /workloads/{id}/metrics  # Get GPU metrics for workload
 POST   /workloads/{id}/diagnose # Run AI diagnosis on failure
-```
-
-### Agent Runs
-```http
-GET    /agent-runs              # List all agent executions
-POST   /agent-runs              # Create a new agent run
-GET    /agent-runs/{id}         # Get agent run details
-PUT    /agent-runs/{id}         # Update agent run status
-GET    /agent-runs/{id}/steps   # Get execution trace steps
-POST   /agent-runs/{id}/diagnose # Run AI diagnosis on failed agent
-POST   /agent-steps             # Create agent step in trace
 ```
 
 ### Statistics
