@@ -9,6 +9,8 @@ frontend/out/
 frontend/build/
 backend/crashlens
 backend/crashlens.db
+crashlens-backend
+crashlens.db
 
 # Environment variables
 .env
@@ -22,6 +24,7 @@ backend/crashlens.db
 
 # Vercel
 .vercel
+.vercel-trigger
 
 # OS
 .DS_Store
