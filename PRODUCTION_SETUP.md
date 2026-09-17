@@ -135,12 +135,11 @@ Same approach - just add the tracker wrapper!
 
 ## Next Steps
 
-1. **Try the examples**: `cd crashlens-sdk/examples`
-2. **Integrate with your code**: Add 3 lines of code
-3. **Run a job**: Execute your script
-4. **Check dashboard**: View results
-5. **Simulate a failure**: Raise an exception
-6. **Get AI diagnosis**: Click "Run AI Diagnosis"
+1. **Integrate with your code**: Add 3 lines of code
+2. **Run a job**: Execute your script
+3. **Check dashboard**: View results
+4. **Simulate a failure**: Raise an exception
+5. **Get AI diagnosis**: Click "Run AI Diagnosis"
 
 ## Cost Tracking
 

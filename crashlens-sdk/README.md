@@ -219,3 +219,8 @@ tracker._update_workload(
 3. **Run diagnosis** - After failures, use AI to get actionable fixes
 4. **Track costs** - Monitor wasted GPU-seconds to optimize
 5. **Integrate early** - Add tracking before production to catch issues
+
+## Support
+
+- Dashboard: https://frontend-zeta-eight-92.vercel.app
+- Issues: https://github.com/kavinsaravan/ML-Failure-Doctor/issues

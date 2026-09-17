@@ -123,8 +123,6 @@ ML-Failure-Doctor/
 │   ├── crashlens/
 │   │   ├── __init__.py
 │   │   └── workload_tracker.py # Track GPU workloads
-│   ├── examples/
-│   │   └── pytorch_training.py
 │   └── setup.py
 │
 ├── jobs/                       # Test workload scripts
