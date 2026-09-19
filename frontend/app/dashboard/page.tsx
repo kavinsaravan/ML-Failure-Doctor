@@ -130,15 +130,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="mb-6 border-b border-slate-700">
-          <div className="flex gap-8 justify-center">
-            <div className="pb-4 border-b-2 border-blue-500 text-blue-400 font-medium">
-              GPU Workloads
-            </div>
-          </div>
-        </div>
-
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
