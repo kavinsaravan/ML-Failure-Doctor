@@ -109,25 +109,8 @@ export default function Dashboard() {
           >
             ← Back to Home
           </Link>
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <h1 className="text-4xl font-bold text-white">CrashLens Dashboard</h1>
-            <span className="px-3 py-1 bg-red-600 text-white text-sm font-semibold rounded">AMD ROCm</span>
-          </div>
+          <h1 className="text-4xl font-bold text-white mb-3">CrashLens Dashboard</h1>
           <p className="text-slate-400">Monitor and diagnose GPU workloads across all platforms</p>
-          <div className="flex items-center justify-center gap-6 mt-3 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500">Platform:</span>
-              <span className="text-white font-medium">AMD ROCm 5.7+</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500">Worker Type:</span>
-              <span className="text-white font-medium">AMD GPU Worker</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500">Metric Source:</span>
-              <span className="text-white font-medium">rocm-smi compatible</span>
-            </div>
-          </div>
         </div>
 
         {/* Stats Cards */}

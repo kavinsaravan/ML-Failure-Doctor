@@ -25,7 +25,7 @@ export default function Home() {
               </span>
             </h1>
             <p className="text-xl text-slate-300 mb-12 leading-relaxed max-w-3xl mx-auto">
-              CrashLens monitors AMD GPU workloads, captures logs and metrics, and uses Gemma to generate root-cause analysis and repair recommendations.
+              CrashLens monitors GPU workloads, captures logs and metrics, and uses AI to generate root-cause analysis and repair recommendations.
             </p>
           </div>
 
@@ -61,10 +61,10 @@ export default function Home() {
                 <Shield className="w-7 h-7 text-white" />
               </div>
               <h3 className="text-xl font-semibold text-white mb-3">
-                AMD ROCm Native
+                Universal GPU Support
               </h3>
               <p className="text-slate-400 leading-relaxed">
-                Built for AMD GPUs with HIP/ROCm error detection and rocm-smi metrics integration.
+                Works with NVIDIA (CUDA) and AMD (ROCm) GPUs with automatic detection and platform-specific error diagnosis.
               </p>
             </div>
 
