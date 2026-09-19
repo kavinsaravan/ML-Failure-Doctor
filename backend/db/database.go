@@ -1,6 +1,7 @@
 package db
 
 import (
+	"crashlens/metrics"
 	"database/sql"
 	"time"
 
@@ -166,6 +167,11 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 		failureTypes[ftype] = count
 	}
 	stats["failure_types"] = failureTypes
+
+	// Detect GPU platform
+	collector := metrics.GetCollector("")
+	gpuPlatform := collector.Name()
+	stats["gpu_platform"] = gpuPlatform
 
 	return stats, nil
 }

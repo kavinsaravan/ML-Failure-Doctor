@@ -29,6 +29,7 @@ export interface Stats {
   succeeded_workloads: number;
   wasted_gpu_seconds: number;
   failure_types: { [key: string]: number };
+  gpu_platform?: string;
 }
 
 export interface DiagnosisReport {
