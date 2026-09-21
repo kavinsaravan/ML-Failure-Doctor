@@ -10,7 +10,13 @@ frontend/build/
 backend/crashlens
 backend/crashlens.db
 crashlens-backend
+crashlens-backend-test
 crashlens.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
 
 # Environment variables
 .env

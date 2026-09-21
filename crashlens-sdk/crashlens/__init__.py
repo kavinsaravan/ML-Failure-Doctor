@@ -1,6 +1,6 @@
 """
 CrashLens Python SDK
-Track ML workloads and AI agents with automatic failure reporting
+Track ML workloads with automatic failure reporting
 """
 
 from .workload_tracker import WorkloadTracker

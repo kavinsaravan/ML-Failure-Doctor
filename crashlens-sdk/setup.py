@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="crashlens",
     version="0.1.0",
-    description="CrashLens SDK for tracking ML workloads and AI agents",
+    description="CrashLens SDK for tracking ML workloads",
     author="Kavin Saravan",
     packages=find_packages(),
     install_requires=[
