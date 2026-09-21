@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GPU OOM Failure Job
-Simulates a GPU Out of Memory error during training with AMD/ROCm.
+Simulates a GPU Out of Memory error during training
 """
 
 import time
