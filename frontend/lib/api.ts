@@ -85,4 +85,12 @@ export const api = {
     if (!res.ok) throw new Error('Failed to diagnose workload');
     return res.json();
   },
+
+  async clearAllWorkloads(): Promise<void> {
+    const res = await fetch(`${API_URL}/workloads/clear`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to clear workloads');
+  },
 };

@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Timer,
   PlayCircle,
+  Trash2,
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -50,6 +51,20 @@ export default function Dashboard() {
       console.error('Failed to run job:', error);
     } finally {
       setRunningJob(null);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!confirm('Are you sure you want to delete all workloads? This cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await api.clearAllWorkloads();
+      loadData();
+    } catch (error) {
+      console.error('Failed to clear workloads:', error);
+      alert('Failed to clear workloads. Please try again.');
     }
   };
 
@@ -123,7 +138,18 @@ export default function Dashboard() {
               </span>
             )}
           </div>
-          <p className="text-slate-400">Monitor and diagnose GPU workloads across all platforms</p>
+          <p className="text-slate-400 mb-4">Monitor and diagnose GPU workloads across all platforms</p>
+
+          {/* Clear All Button */}
+          {workloads.length > 0 && (
+            <button
+              onClick={handleClearAll}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear All Workloads
+            </button>
+          )}
         </div>
 
         {/* Stats Cards */}

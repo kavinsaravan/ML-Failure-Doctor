@@ -43,6 +43,7 @@ func main() {
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
 	r.HandleFunc("/workloads", server.CreateWorkloadHandler).Methods("POST")
 	r.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
+	r.HandleFunc("/workloads/clear", server.ClearAllWorkloadsHandler).Methods("DELETE")
 	r.HandleFunc("/workloads/{id}", server.GetWorkloadHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}", server.UpdateWorkloadHandler).Methods("PUT")
 	r.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
