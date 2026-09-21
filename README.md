@@ -90,42 +90,42 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
 ```
 ML-Failure-Doctor/
 ├── backend/                    # Go backend API
-│   ├── main.go                 # Entry point
-│   ├── api/                    # HTTP handlers
+│   ├── main.go                 
+│   ├── api/                    
 │   │   └── handlers.go
-│   ├── db/                     # Database layer
+│   ├── db/                     
 │   │   └── database.go
-│   ├── fireworks/              # Fireworks AI client
+│   ├── fireworks/              
 │   │   └── client.go
-│   ├── metrics/                # GPU metrics collection
-│   │   └── collector.go        # nvidia-smi/rocm-smi
-│   ├── classifier/             # Failure classification
+│   ├── metrics/                
+│   │   └── collector.go        
+│   ├── classifier/             
 │   │   └── classifier.go
-│   ├── diagnosis/              # AI diagnosis logic
+│   ├── diagnosis/             
 │   │   └── diagnosis.go
-│   ├── runner/                 # Workload execution
+│   ├── runner/                
 │   │   └── runner.go
 │   └── go.mod
 │
 ├── frontend/                   # Next.js dashboard
 │   ├── app/
 │   │   ├── page.tsx
-│   │   ├── dashboard/          # Main dashboard
+│   │   ├── dashboard/          
 │   │   │   └── page.tsx
-│   │   └── workloads/[id]/     # Workload details
+│   │   └── workloads/[id]/     
 │   │       └── page.tsx
-│   ├── components/             # React components
+│   ├── components/            
 │   ├── lib/
-│   │   └── api.ts              # API client
+│   │   └── api.ts              
 │   └── package.json
 │
 ├── crashlens-sdk/              # Python SDK
 │   ├── crashlens/
 │   │   ├── __init__.py
-│   │   └── workload_tracker.py # Track GPU workloads
+│   │   └── workload_tracker.py 
 │   └── setup.py
 │
-├── jobs/                       # Test workload scripts
+├── jobs/                       
 │   ├── gpu_oom.py
 │   ├── dependency_error.py
 │   ├── missing_checkpoint.py
