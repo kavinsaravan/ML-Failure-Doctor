@@ -313,17 +313,3 @@ diagnosis = tracker.diagnose(
 tracker.show_workload(workload_id: int)
 ```
 
----
-
-## Additional Resources
-
-- **Dashboard**: https://frontend-zeta-eight-92.vercel.app/dashboard
-- **SDK README**: ../crashlens-sdk/README.md
-- **Main README**: ../README.md
-- **Example Notebooks**: ../crashlens-sdk/examples/notebooks/
-
----
-
-## License
-
-MIT License - Part of the CrashLens project
