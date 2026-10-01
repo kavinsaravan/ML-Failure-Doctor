@@ -4,21 +4,6 @@ Complete guide to using CrashLens in Jupyter notebooks with rich displays, magic
 
 ---
 
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Installation](#installation)
-3. [Quick Start](#quick-start)
-4. [Features](#features)
-5. [Usage Patterns](#usage-patterns)
-6. [Magic Commands](#magic-commands)
-7. [Rich HTML Displays](#rich-html-displays)
-8. [Example Notebooks](#example-notebooks)
-9. [Best Practices](#best-practices)
-10. [Troubleshooting](#troubleshooting)
-
----
-
 ## Overview
 
 CrashLens provides first-class support for Jupyter notebooks, including:
