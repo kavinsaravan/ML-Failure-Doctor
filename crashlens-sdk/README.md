@@ -4,9 +4,25 @@ Track GPU workloads with automatic failure reporting and AI-powered diagnosis.
 
 ## Installation
 
+### Core SDK
 ```bash
 cd crashlens-sdk
 pip install -e .
+```
+
+### With Jupyter Notebook Support
+```bash
+pip install -e ".[jupyter]"
+```
+
+This installs additional dependencies:
+- IPython (magic commands)
+- Jupyter notebook
+- pandas (rich displays)
+
+### All Features
+```bash
+pip install -e ".[all]"
 ```
 
 ## Quick Start
@@ -165,6 +181,105 @@ tracker = WorkloadTracker("https://your-backend.railway.app")
 with tracker.track("Model Quantization"):
     model = AutoGPTQForCausalLM.from_pretrained(model_name)
     model.quantize(quantize_config)
+```
+
+## Jupyter Notebook Integration
+
+CrashLens provides enhanced features for Jupyter notebooks with rich HTML displays, magic commands, and inline visualizations.
+
+### Option 1: Enhanced Tracker (Recommended)
+
+```python
+from crashlens.jupyter import JupyterWorkloadTracker
+
+tracker = JupyterWorkloadTracker("https://your-backend.railway.app")
+
+# Track with rich displays
+with tracker.track("Training Model", display_metrics=True):
+    model.fit(X_train, y_train)
+
+# Auto-diagnose failures
+with tracker.track("Risky Operation", auto_diagnose=True):
+    risky_code()
+
+# Manual diagnosis with rich HTML
+diagnosis = tracker.diagnose(workload_id)
+
+# View workload details
+tracker.show_workload(workload_id)
+```
+
+**Features:**
+- ✅ Rich HTML displays (color-coded success/failure)
+- ✅ Inline GPU metrics tables
+- ✅ Formatted AI diagnosis reports
+- ✅ Live progress indicators
+- ✅ Auto-detection of Jupyter environment
+
+### Option 2: IPython Magic Commands
+
+```python
+# Load the extension
+%load_ext crashlens.jupyter
+
+# Initialize once
+%crashlens_init https://your-backend.railway.app
+
+# Track entire cells
+%%crashlens_track "Data Processing"
+data = load_and_process_data()
+features = extract_features(data)
+
+# Diagnose by ID
+%crashlens_diagnose 123
+
+# Show workload details
+%crashlens_show 123
+```
+
+**Available Magic Commands:**
+- `%crashlens_init <api_url>` - Initialize tracker
+- `%%crashlens_track "Job Name"` - Track a cell
+- `%crashlens_diagnose <id>` - Get AI diagnosis
+- `%crashlens_show <id>` - View workload details
+
+### Example Notebooks
+
+Check out the example notebooks in `examples/notebooks/`:
+
+1. **01_quickstart.ipynb** - Basic features and rich displays
+2. **02_magic_commands.ipynb** - IPython magic commands
+3. **03_pytorch_training.ipynb** - PyTorch integration
+
+```bash
+# Launch Jupyter
+cd examples/notebooks
+jupyter notebook
+```
+
+### Jupyter-Specific Features
+
+**Rich HTML Outputs:**
+- Color-coded status badges (green/red/blue)
+- Formatted diagnosis reports
+- Evidence highlighting
+- Fix step numbering
+- Prevention tips
+
+**Inline Metrics:**
+```python
+# Display GPU metrics as pandas DataFrame
+with tracker.track("Training", display_metrics=True):
+    train_model()
+# Automatically shows GPU memory, utilization, temperature
+```
+
+**Auto-Diagnosis:**
+```python
+# Automatically diagnose failures
+with tracker.track("Job", auto_diagnose=True):
+    code_that_might_fail()
+# AI diagnosis appears automatically on failure
 ```
 
 ## Environment Variables

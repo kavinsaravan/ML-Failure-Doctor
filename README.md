@@ -37,6 +37,16 @@
 - **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring
 - **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
 
+###  Jupyter Notebook Integration
+CrashLens provides first-class support for Jupyter notebooks:
+- **IPython Magic Commands**: Track cells with `%%crashlens_track "Job Name"`
+- **Rich HTML Displays**: Color-coded status, formatted diagnosis reports
+- **Inline Metrics**: GPU metrics displayed as pandas DataFrames
+- **Auto-Diagnosis**: Automatically diagnose failures in tracked cells
+- **Live Progress**: Real-time workload status indicators
+
+See [Jupyter Integration Guide](./docs/JUPYTER_INTEGRATION.md) for detailed usage.
+
 ###  Model Context Protocol (MCP) Integration
 CrashLens exposes diagnostic capabilities through standardized MCP tools:
 - `get_workload_logs` - Retrieve execution logs and error traces
