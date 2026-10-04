@@ -288,14 +288,6 @@ class JupyterWorkloadTracker:
             runtime = time.time() - start_time
             self._display_failure(name, runtime, workload_id, str(e))
 
-            # Auto-diagnose if enabled
-            if auto_diagnose:
-                try:
-                    diagnosis = self.diagnose(workload_id, display=False)
-                    self._display_diagnosis(diagnosis)
-                except:
-                    pass
-
             raise
 
         finally:
@@ -326,6 +318,14 @@ class JupyterWorkloadTracker:
                 # Optionally display metrics
                 if display_metrics and self.in_jupyter:
                     self._display_metrics(workload_id)
+
+            # Auto-diagnose if enabled and failed (runs after metrics are sent)
+            elif status == "failed" and auto_diagnose:
+                try:
+                    diagnosis = self.diagnose(workload_id, display=False)
+                    self._display_diagnosis(diagnosis)
+                except:
+                    pass
 
     def diagnose(self, workload_id: int, display: bool = True) -> Dict[str, Any]:
         """
