@@ -13,25 +13,32 @@ from contextlib import contextmanager
 class WorkloadTracker:
     """
     Track ML workloads with automatic failure reporting
-    
+
     Usage:
-        tracker = WorkloadTracker("https://your-backend.railway.app")
-        
+        tracker = WorkloadTracker(
+            "https://your-backend.railway.app",
+            api_key=os.getenv("CRASHLENS_API_KEY")  # Required in production
+        )
+
         # Option 1: Context manager (recommended)
         with tracker.track("Training GPT-2"):
             # Your training code here
             train_model()
-        
+
         # Option 2: Decorator
         @tracker.track_function("Fine-tuning BERT")
         def train():
             # Your training code
             pass
     """
-    
-    def __init__(self, api_url: str):
+
+    def __init__(self, api_url: str, api_key: Optional[str] = None):
         self.api_url = api_url.rstrip('/')
+        self.api_key = api_key
         self.workload_id: Optional[int] = None
+        self.headers = {'Content-Type': 'application/json'}
+        if api_key:
+            self.headers['Authorization'] = f'Bearer {api_key}'
         
     def _create_workload(self, name: str, workload_type: str = "ML_JOB") -> int:
         """Create a workload entry"""
@@ -41,14 +48,15 @@ class WorkloadTracker:
                 "name": name,
                 "type": workload_type,
                 "status": "running"
-            }
+            },
+            headers=self.headers
         )
         response.raise_for_status()
         return response.json()["id"]
     
     def _update_workload(
-        self, 
-        workload_id: int, 
+        self,
+        workload_id: int,
         status: str,
         logs: Optional[str] = None,
         runtime_seconds: Optional[float] = None,
@@ -65,10 +73,11 @@ class WorkloadTracker:
             data["exit_code"] = exit_code
         if failure_type:
             data["failure_type"] = failure_type
-            
+
         requests.put(
             f"{self.api_url}/workloads/{workload_id}",
-            json=data
+            json=data,
+            headers=self.headers
         )
     
     @contextmanager
@@ -153,12 +162,13 @@ class WorkloadTracker:
     def diagnose(self, workload_id: int) -> Dict[str, Any]:
         """
         Run AI diagnosis on a failed workload
-        
+
         Returns:
             dict with root_cause, recommended_fixes, etc.
         """
         response = requests.post(
-            f"{self.api_url}/workloads/{workload_id}/diagnose"
+            f"{self.api_url}/workloads/{workload_id}/diagnose",
+            headers=self.headers
         )
         response.raise_for_status()
         return response.json()
