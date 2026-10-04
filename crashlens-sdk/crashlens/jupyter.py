@@ -44,10 +44,14 @@ class JupyterWorkloadTracker:
             model.fit(X_train, y_train, epochs=10)
     """
 
-    def __init__(self, api_url: str):
+    def __init__(self, api_url: str, api_key: Optional[str] = None):
         self.api_url = api_url.rstrip('/')
+        self.api_key = api_key
         self.workload_id: Optional[int] = None
         self.in_jupyter = self._check_jupyter()
+        self.headers = {'Content-Type': 'application/json'}
+        if api_key:
+            self.headers['Authorization'] = f'Bearer {api_key}'
 
     def _check_jupyter(self) -> bool:
         """Check if running in Jupyter environment"""
@@ -67,7 +71,8 @@ class JupyterWorkloadTracker:
                 "name": name,
                 "type": "ML_JOB",
                 "status": "running"
-            }
+            },
+            headers=self.headers
         )
         response.raise_for_status()
         return response.json()["id"]
@@ -75,11 +80,11 @@ class JupyterWorkloadTracker:
     def _update_workload(self, workload_id: int, status: str, **kwargs):
         """Update workload status"""
         data = {"status": status, **kwargs}
-        requests.put(f"{self.api_url}/workloads/{workload_id}", json=data)
+        requests.put(f"{self.api_url}/workloads/{workload_id}", json=data, headers=self.headers)
 
     def _get_workload(self, workload_id: int) -> Dict[str, Any]:
         """Get workload details"""
-        response = requests.get(f"{self.api_url}/workloads/{workload_id}")
+        response = requests.get(f"{self.api_url}/workloads/{workload_id}", headers=self.headers)
         response.raise_for_status()
         return response.json()
 
@@ -89,7 +94,7 @@ class JupyterWorkloadTracker:
             return
 
         try:
-            response = requests.get(f"{self.api_url}/workloads/{workload_id}/metrics")
+            response = requests.get(f"{self.api_url}/workloads/{workload_id}/metrics", headers=self.headers)
             if response.status_code == 200:
                 metrics = response.json()
                 if metrics and isinstance(metrics, list):
@@ -315,7 +320,7 @@ class JupyterWorkloadTracker:
         Returns:
             dict with root_cause, recommended_fixes, evidence, etc.
         """
-        response = requests.post(f"{self.api_url}/workloads/{workload_id}/diagnose")
+        response = requests.post(f"{self.api_url}/workloads/{workload_id}/diagnose", headers=self.headers)
         response.raise_for_status()
         diagnosis = response.json()
 
@@ -401,17 +406,22 @@ if JUPYTER_AVAILABLE:
 
             Usage:
                 %crashlens_init https://your-backend.railway.app
+                %crashlens_init https://your-backend.railway.app API_KEY
             """
-            api_url = line.strip()
-            if not api_url:
-                print("❌ Please provide API URL: %crashlens_init https://your-backend.railway.app")
+            parts = line.strip().split()
+            if not parts:
+                print("❌ Please provide API URL: %crashlens_init https://your-backend.railway.app [API_KEY]")
                 return
 
-            self.tracker = JupyterWorkloadTracker(api_url)
+            api_url = parts[0]
+            api_key = parts[1] if len(parts) > 1 else None
+
+            self.tracker = JupyterWorkloadTracker(api_url, api_key)
             display(HTML(f"""
             <div style="border: 2px solid #27ae60; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #eafaf1;">
                 <h4 style="color: #27ae60; margin: 0;">✓ CrashLens Initialized</h4>
                 <p style="margin: 10px 0 0 0;">Connected to: <code>{api_url}</code></p>
+                <p style="margin: 10px 0 0 0;">Auth: <code>{'Enabled' if api_key else 'Disabled'}</code></p>
                 <p style="margin: 10px 0 0 0;">Use <code>%%crashlens_track "Job Name"</code> to track cells</p>
             </div>
             """))

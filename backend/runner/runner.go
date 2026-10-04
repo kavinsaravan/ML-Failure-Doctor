@@ -74,9 +74,11 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	}
 
 	// Start metrics collection in background
+	// Use mutex-protected slice instead of channel to avoid buffering issues
 	metricsCtx, cancelMetrics := context.WithCancel(ctx)
-	metricsChan := make(chan MetricsSnapshot, 100)
-	go collectMetricsStream(metricsCtx, scriptPath, metricsChan)
+	var allMetrics []MetricsSnapshot
+	var metricsMutex sync.Mutex
+	go collectMetricsToSlice(metricsCtx, scriptPath, &allMetrics, &metricsMutex)
 
 	// WaitGroup to ensure all output is read before cmd.Wait()
 	var wg sync.WaitGroup
@@ -101,25 +103,9 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	err = cmd.Wait()
 	runtime := time.Since(startTime).Seconds()
 
-	// Stop metrics collection
+	// Stop metrics collection and wait for final snapshot
 	cancelMetrics()
-
-	// Collect all metrics snapshots with timeout to prevent deadlock
-	var allMetrics []MetricsSnapshot
-	timeout := time.After(500 * time.Millisecond)
-drainLoop:
-	for {
-		select {
-		case metric, ok := <-metricsChan:
-			if !ok {
-				break drainLoop
-			}
-			allMetrics = append(allMetrics, metric)
-		case <-timeout:
-			close(metricsChan)
-			break drainLoop
-		}
-	}
+	time.Sleep(100 * time.Millisecond) // Allow final metric to be recorded
 
 	// Format metrics as JSON
 	metricsJSON, _ := json.MarshalIndent(allMetrics, "", "  ")
@@ -190,8 +176,8 @@ func streamOutput(reader io.Reader, buffer *bytes.Buffer, mutex *sync.Mutex, pre
 	}
 }
 
-// collectMetricsStream periodically collects GPU metrics during job execution
-func collectMetricsStream(ctx context.Context, scriptPath string, metricsChan chan<- MetricsSnapshot) {
+// collectMetricsToSlice periodically collects GPU metrics during job execution
+func collectMetricsToSlice(ctx context.Context, scriptPath string, metrics *[]MetricsSnapshot, mutex *sync.Mutex) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -205,13 +191,10 @@ func collectMetricsStream(ctx context.Context, scriptPath string, metricsChan ch
 			return
 		case <-ticker.C:
 			snapshot := collectGPUMetricsSnapshot(jobType, iteration)
-			// Use non-blocking send to prevent panic if channel is closed
-			select {
-			case metricsChan <- snapshot:
-				iteration++
-			case <-ctx.Done():
-				return
-			}
+			mutex.Lock()
+			*metrics = append(*metrics, snapshot)
+			mutex.Unlock()
+			iteration++
 		}
 	}
 }

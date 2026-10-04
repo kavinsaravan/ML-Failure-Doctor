@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+// Compile regex patterns once at package level
+var (
+	oomWordBoundary = regexp.MustCompile(`\boom\b`)
+)
+
 // FailureType constants
 const (
 	GPUOutOfMemory    = "GPU_OUT_OF_MEMORY"
@@ -46,14 +51,14 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		strings.Contains(logsLower, "cuda error: out of memory") {
 		return ClassificationResult{GPUOutOfMemory, 0.95}
 	}
-	// Generic GPU OOM patterns (use word boundaries to avoid false positives like "room")
-	oomPattern := regexp.MustCompile(`\boom\b`)
-	if strings.Contains(logsLower, "out of memory") || oomPattern.MatchString(logsLower) {
-		return ClassificationResult{GPUOutOfMemory, 0.85}
-	}
+	// ROCm-specific OOM (check before generic patterns)
 	if strings.Contains(logsLower, "rocm out of memory") ||
 		strings.Contains(logsLower, "gpu memory allocation failed") {
 		return ClassificationResult{GPUOutOfMemory, 0.90}
+	}
+	// Generic GPU OOM patterns (use word boundaries to avoid false positives like "room")
+	if strings.Contains(logsLower, "out of memory") || oomWordBoundary.MatchString(logsLower) {
+		return ClassificationResult{GPUOutOfMemory, 0.85}
 	}
 
 	// Missing checkpoint detection

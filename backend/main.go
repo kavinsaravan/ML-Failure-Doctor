@@ -40,23 +40,25 @@ func main() {
 	// Setup router
 	r := mux.NewRouter()
 
-	// Public (read-only) routes
+	// Public routes (read-only + safe operations)
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
 	r.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}", server.GetWorkloadHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}/logs", server.GetWorkloadLogsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}/metrics", server.GetWorkloadMetricsHandler).Methods("GET")
 	r.HandleFunc("/summary", server.GetSummaryHandler).Methods("GET")
+	// Safe to leave public: only runs whitelisted templates, no RCE risk
+	r.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
+	// Safe to leave public: read-only diagnosis (consider adding rate limiting)
+	r.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 
-	// Protected (write/delete) routes - require API key in production
+	// Protected routes (write/delete/destructive) - require API key in production
 	protectedRouter := r.PathPrefix("").Subrouter()
 	protectedRouter.Use(middleware.RequireAPIKey)
 	protectedRouter.HandleFunc("/workloads", server.CreateWorkloadHandler).Methods("POST")
 	protectedRouter.HandleFunc("/workloads/clear", server.ClearAllWorkloadsHandler).Methods("DELETE")
 	protectedRouter.HandleFunc("/workloads/{id}", server.UpdateWorkloadHandler).Methods("PUT")
 	protectedRouter.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
-	protectedRouter.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
-	protectedRouter.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 
 	// CORS - Allow all Vercel preview deployments by using AllowOriginFunc
 	handler := cors.New(cors.Options{
