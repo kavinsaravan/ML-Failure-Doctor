@@ -139,8 +139,8 @@ export default function Dashboard() {
           </div>
           <p className="text-slate-400 mb-4">Monitor and diagnose GPU workloads across all platforms</p>
 
-          {/* Clear All Button */}
-          {workloads.length > 0 && (
+          {/* Clear All Button - only show in development */}
+          {workloads.length > 0 && process.env.NODE_ENV !== 'production' && (
             <button
               onClick={handleClearAll}
               className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"

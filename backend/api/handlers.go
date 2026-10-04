@@ -282,7 +282,17 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Run diagnosis
+	// If diagnosis already exists, return cached result (idempotent)
+	if workload.FailureReport != nil && *workload.FailureReport != "" {
+		var cachedReport diagnosis.Report
+		if err := json.Unmarshal([]byte(*workload.FailureReport), &cachedReport); err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(cachedReport)
+			return
+		}
+	}
+
+	// Run diagnosis (calls AI model, costs money)
 	report := diagnosis.RunDiagnosis(workload, s.FWClient)
 
 	// Store diagnosis in database

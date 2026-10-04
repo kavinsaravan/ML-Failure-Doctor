@@ -4,6 +4,7 @@ CrashLens Jupyter Notebook Integration
 Provides IPython magic commands, rich display, and inline visualizations for Jupyter notebooks.
 """
 
+import os
 import time
 import requests
 from typing import Optional, Dict, Any, List
@@ -406,22 +407,25 @@ if JUPYTER_AVAILABLE:
 
             Usage:
                 %crashlens_init https://your-backend.railway.app
-                %crashlens_init https://your-backend.railway.app API_KEY
+
+            The API key is read from the CRASHLENS_API_KEY environment variable.
+            Set it before starting Jupyter:
+                export CRASHLENS_API_KEY=your_key
             """
-            parts = line.strip().split()
-            if not parts:
-                print("❌ Please provide API URL: %crashlens_init https://your-backend.railway.app [API_KEY]")
+            api_url = line.strip()
+            if not api_url:
+                print("❌ Please provide API URL: %crashlens_init https://your-backend.railway.app")
                 return
 
-            api_url = parts[0]
-            api_key = parts[1] if len(parts) > 1 else None
+            # Get API key from environment, never from cell source
+            api_key = os.getenv("CRASHLENS_API_KEY")
 
             self.tracker = JupyterWorkloadTracker(api_url, api_key)
             display(HTML(f"""
             <div style="border: 2px solid #27ae60; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #eafaf1;">
                 <h4 style="color: #27ae60; margin: 0;">✓ CrashLens Initialized</h4>
                 <p style="margin: 10px 0 0 0;">Connected to: <code>{api_url}</code></p>
-                <p style="margin: 10px 0 0 0;">Auth: <code>{'Enabled' if api_key else 'Disabled'}</code></p>
+                <p style="margin: 10px 0 0 0;">Auth: <code>{'Enabled' if api_key else 'Disabled (set CRASHLENS_API_KEY)'}</code></p>
                 <p style="margin: 10px 0 0 0;">Use <code>%%crashlens_track "Job Name"</code> to track cells</p>
             </div>
             """))

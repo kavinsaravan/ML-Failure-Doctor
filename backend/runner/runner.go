@@ -74,11 +74,14 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	}
 
 	// Start metrics collection in background
-	// Use mutex-protected slice instead of channel to avoid buffering issues
 	metricsCtx, cancelMetrics := context.WithCancel(ctx)
 	var allMetrics []MetricsSnapshot
 	var metricsMutex sync.Mutex
-	go collectMetricsToSlice(metricsCtx, scriptPath, &allMetrics, &metricsMutex)
+	metricsDone := make(chan struct{})
+	go func() {
+		defer close(metricsDone)
+		collectMetricsToSlice(metricsCtx, scriptPath, &allMetrics, &metricsMutex)
+	}()
 
 	// WaitGroup to ensure all output is read before cmd.Wait()
 	var wg sync.WaitGroup
@@ -103,9 +106,9 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	err = cmd.Wait()
 	runtime := time.Since(startTime).Seconds()
 
-	// Stop metrics collection and wait for final snapshot
+	// Stop metrics collection and wait for collector to fully exit
 	cancelMetrics()
-	time.Sleep(100 * time.Millisecond) // Allow final metric to be recorded
+	<-metricsDone // Collector has fully exited; safe to read allMetrics without lock
 
 	// Format metrics as JSON
 	metricsJSON, _ := json.MarshalIndent(allMetrics, "", "  ")
