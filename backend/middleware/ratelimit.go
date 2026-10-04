@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,8 +45,11 @@ func (rl *IPRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Extract IP from request
 		ip := r.RemoteAddr
-		if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
-			ip = forwardedFor
+
+		// Use last entry in X-Forwarded-For (added by Railway proxy, can't be spoofed)
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			ip = strings.TrimSpace(parts[len(parts)-1])
 		}
 
 		limiter := rl.getLimiter(ip)

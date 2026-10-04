@@ -10,6 +10,12 @@ import requests
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
 
+try:
+    from .metrics import GPUMetricsSampler
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+
 # Check if running in Jupyter
 try:
     from IPython import get_ipython
@@ -238,6 +244,12 @@ class JupyterWorkloadTracker:
         start_time = time.time()
         logs = []
 
+        # Start GPU metrics collection
+        sampler = None
+        if METRICS_AVAILABLE:
+            sampler = GPUMetricsSampler()
+            sampler.start()
+
         # Capture stdout/stderr
         class LogCapture:
             def __init__(self, original):
@@ -255,6 +267,9 @@ class JupyterWorkloadTracker:
         sys.stdout = LogCapture(old_stdout)
         sys.stderr = LogCapture(old_stderr)
 
+        status = "succeeded"
+        exit_code = 0
+
         try:
             # Show initial progress
             if self.in_jupyter:
@@ -262,53 +277,55 @@ class JupyterWorkloadTracker:
 
             yield workload_id
 
-            # Success
-            runtime = time.time() - start_time
-            self._update_workload(
-                workload_id,
-                status="succeeded",
-                job_logs="".join(logs),
-                runtime_seconds=int(runtime),
-                exit_code=0
-            )
-
-            # Display success
-            self._display_success(name, runtime, workload_id)
-
-            # Optionally display metrics
-            if display_metrics and self.in_jupyter:
-                self._display_metrics(workload_id)
-
         except Exception as e:
-            # Failure
-            runtime = time.time() - start_time
+            # Failure - set status but don't update yet
+            status = "failed"
+            exit_code = 1
             error_logs = "".join(logs) + "\n\n" + traceback.format_exc()
-
-            self._update_workload(
-                workload_id,
-                status="failed",
-                job_logs=error_logs,
-                runtime_seconds=int(runtime),
-                exit_code=1
-            )
+            logs = [error_logs]
 
             # Display failure
+            runtime = time.time() - start_time
             self._display_failure(name, runtime, workload_id, str(e))
 
             # Auto-diagnose if enabled
             if auto_diagnose:
                 try:
-                    diagnosis = self.diagnose(workload_id)
+                    diagnosis = self.diagnose(workload_id, display=False)
                     self._display_diagnosis(diagnosis)
                 except:
                     pass
 
-            # Re-raise the exception
             raise
 
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
+
+            # Stop GPU metrics collection
+            gpu_metrics = None
+            if sampler:
+                samples = sampler.stop()
+                gpu_metrics = sampler.to_json(samples)
+
+            # Update workload with logs and metrics
+            runtime = time.time() - start_time
+            self._update_workload(
+                workload_id,
+                status=status,
+                job_logs="".join(logs),
+                runtime_seconds=int(runtime),
+                exit_code=exit_code,
+                gpu_metrics=gpu_metrics
+            )
+
+            # Display success if not failed
+            if status == "succeeded":
+                self._display_success(name, runtime, workload_id)
+
+                # Optionally display metrics
+                if display_metrics and self.in_jupyter:
+                    self._display_metrics(workload_id)
 
     def diagnose(self, workload_id: int, display: bool = True) -> Dict[str, Any]:
         """

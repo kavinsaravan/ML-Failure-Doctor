@@ -13,6 +13,7 @@ import json
 from typing import List, Dict, Optional
 from threading import Thread, Event
 from collections import deque
+from datetime import datetime, timezone
 
 
 class GPUMetricsSampler:
@@ -64,6 +65,13 @@ class GPUMetricsSampler:
         if self.thread is not None:
             return  # Already started
 
+        # Reset peak memory stats so we only track this run (important for notebooks)
+        if self.torch_cuda_available:
+            try:
+                self.torch.cuda.reset_peak_memory_stats()
+            except Exception:
+                pass
+
         self.stop_event.clear()
         self.thread = Thread(target=self._sample_loop, daemon=True)
         self.thread.start()
@@ -104,7 +112,8 @@ class GPUMetricsSampler:
         Never raises exceptions - returns None on failure
         """
         try:
-            timestamp = time.time()
+            # ISO 8601 timestamp for JavaScript Date compatibility
+            timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
             # Try NVIDIA first (most detailed)
             if self.nvml_available:
@@ -120,7 +129,7 @@ class GPUMetricsSampler:
             # Never crash the user's job
             return None
 
-    def _collect_nvidia(self, timestamp: float) -> Dict:
+    def _collect_nvidia(self, timestamp: str) -> Dict:
         """Collect NVIDIA GPU metrics via pynvml"""
         mem_info = self.pynvml.nvmlDeviceGetMemoryInfo(self.nvml_handle)
         utilization = self.pynvml.nvmlDeviceGetUtilizationRates(self.nvml_handle)
@@ -143,31 +152,28 @@ class GPUMetricsSampler:
             "source": "nvidia-ml-py"
         }
 
-    def _collect_torch_cuda(self, timestamp: float) -> Dict:
+    def _collect_torch_cuda(self, timestamp: str) -> Dict:
         """
         Collect GPU metrics via torch.cuda (works on NVIDIA and AMD ROCm)
 
-        Limited to memory stats - no utilization or temperature
+        Uses mem_get_info() for device-wide stats (matches what nvidia-smi shows)
         """
-        allocated = self.torch.cuda.memory_allocated(0) / (1024 ** 2)
-        reserved = self.torch.cuda.memory_reserved(0) / (1024 ** 2)
+        # Device-wide memory (includes cached blocks and CUDA context)
+        free_bytes, total_bytes = self.torch.cuda.mem_get_info(0)
+        used_bytes = total_bytes - free_bytes
 
-        # Peak since last reset - captures OOM spikes between samples
-        peak_allocated = self.torch.cuda.max_memory_allocated(0) / (1024 ** 2)
+        used_mb = used_bytes / (1024 ** 2)
+        total_mb = total_bytes / (1024 ** 2)
 
-        # Get total GPU memory (not always accurate on all platforms)
-        try:
-            props = self.torch.cuda.get_device_properties(0)
-            total = props.total_memory / (1024 ** 2)
-        except Exception:
-            total = reserved  # Fallback: use reserved as proxy for total
+        # Peak allocated since last reset - captures OOM spikes between samples
+        peak_allocated_mb = self.torch.cuda.max_memory_allocated(0) / (1024 ** 2)
 
         return {
             "timestamp": timestamp,
-            "gpu_memory_used_mb": allocated,
-            "gpu_memory_total_mb": total,
-            "gpu_memory_percent": (allocated / total * 100) if total > 0 else 0,
-            "gpu_memory_peak_mb": peak_allocated,
+            "gpu_memory_used_mb": used_mb,
+            "gpu_memory_total_mb": total_mb,
+            "gpu_memory_percent": (used_mb / total_mb * 100) if total_mb > 0 else 0,
+            "gpu_memory_peak_mb": peak_allocated_mb,
             "gpu_utilization_percent": None,  # Not available via torch.cuda
             "temperature_celsius": None,
             "source": "torch.cuda"
@@ -187,4 +193,4 @@ class GPUMetricsSampler:
         if not samples:
             return ""
 
-        return json.dumps(samples, indent=2)
+        return json.dumps(samples)
