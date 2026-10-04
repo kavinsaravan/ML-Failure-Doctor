@@ -17,6 +17,7 @@ type Report struct {
 	RecommendedFix string    `json:"recommended_fix"`
 	SafeToRetry    bool      `json:"safe_to_retry"`
 	DiagnosedAt    time.Time `json:"diagnosed_at"`
+	Source         string    `json:"source"` // "ai" or "rules"
 }
 
 func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
@@ -113,6 +114,7 @@ func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType strin
 		RecommendedFix: formatRecommendedFixes(result.RecommendedFixes),
 		SafeToRetry:    result.SafeToRetry,
 		DiagnosedAt:    time.Now(),
+		Source:         "ai",
 	}
 
 	return &report
@@ -132,6 +134,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 		Confidence:  confidence,
 		Evidence:    evidence,
 		DiagnosedAt: time.Now(),
+		Source:      "rules",
 	}
 
 	switch failureType {

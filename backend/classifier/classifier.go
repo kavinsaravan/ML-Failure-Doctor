@@ -96,7 +96,12 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		(strings.Contains(logsLower, "not found") || strings.Contains(logsLower, "does not exist")) {
 		return ClassificationResult{DataPathError, 0.90}
 	}
+	// Check for checkpoint file extensions before generic file error
 	if strings.Contains(logsLower, "no such file or directory") {
+		if strings.Contains(logsLower, ".pt") || strings.Contains(logsLower, ".pth") ||
+			strings.Contains(logsLower, ".ckpt") || strings.Contains(logsLower, ".safetensors") {
+			return ClassificationResult{MissingCheckpoint, 0.85}
+		}
 		return ClassificationResult{DataPathError, 0.85}
 	}
 	if (strings.Contains(logsLower, "file") || strings.Contains(logsLower, "path")) &&

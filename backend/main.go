@@ -16,6 +16,18 @@ import (
 )
 
 func main() {
+	// Check for API key in production
+	apiKey := os.Getenv("CRASHLENS_API_KEY")
+	railwayEnv := os.Getenv("RAILWAY_ENVIRONMENT")
+
+	if railwayEnv == "production" && apiKey == "" {
+		log.Fatal("CRASHLENS_API_KEY must be set in production (RAILWAY_ENVIRONMENT=production)")
+	}
+
+	if apiKey == "" {
+		log.Println("⚠️  Running without API key - ALL routes are unprotected (development mode)")
+	}
+
 	// Initialize database
 	database, err := db.New("./crashlens.db")
 	if err != nil {
@@ -40,6 +52,10 @@ func main() {
 	// Setup router
 	r := mux.NewRouter()
 
+	// Rate limiter for public write operations (10 requests per minute per IP)
+	rateLimiter := middleware.NewIPRateLimiter(10)
+	rateLimiter.Cleanup() // Start background cleanup
+
 	// Public routes (read-only + safe operations)
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
 	r.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
@@ -47,10 +63,14 @@ func main() {
 	r.HandleFunc("/workloads/{id}/logs", server.GetWorkloadLogsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}/metrics", server.GetWorkloadMetricsHandler).Methods("GET")
 	r.HandleFunc("/summary", server.GetSummaryHandler).Methods("GET")
-	// Safe to leave public: only runs whitelisted templates, no RCE risk
-	r.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
-	// Safe to leave public: read-only diagnosis (consider adding rate limiting)
-	r.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
+
+	// Rate-limited public routes
+	rateLimitedRouter := r.PathPrefix("").Subrouter()
+	rateLimitedRouter.Use(rateLimiter.Middleware)
+	// Only runs whitelisted templates, no RCE risk, but rate limited to prevent spam
+	rateLimitedRouter.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
+	// Calls Fireworks AI, rate limited to prevent credit burning
+	rateLimitedRouter.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 
 	// Protected routes (write/delete/destructive) - require API key in production
 	protectedRouter := r.PathPrefix("").Subrouter()

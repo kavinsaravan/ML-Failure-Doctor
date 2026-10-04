@@ -61,6 +61,34 @@ func TestClassifyWithConfidence(t *testing.T) {
 			minConfidence: 0.90,
 		},
 		{
+			name: "Real PyTorch OOM with full traceback",
+			logs: `Traceback (most recent call last):
+  File "train.py", line 87, in <module>
+    loss.backward()
+  File "/usr/local/lib/python3.10/site-packages/torch/tensor.py", line 245, in backward
+    torch.autograd.backward(self, gradient, retain_graph, create_graph)
+RuntimeError: CUDA out of memory. Tried to allocate 2.00 GiB (GPU 0; 15.78 GiB total capacity; 13.24 GiB already allocated; 1.23 GiB free; 13.91 GiB reserved in total by PyTorch)`,
+			expectedType:  GPUOutOfMemory,
+			minConfidence: 0.95,
+		},
+		{
+			name: "Real torch.load missing checkpoint",
+			logs: `Traceback (most recent call last):
+  File "resume_training.py", line 23, in <module>
+    checkpoint = torch.load('checkpoints/epoch_10.pt')
+FileNotFoundError: [Errno 2] No such file or directory: 'checkpoints/epoch_10.pt'`,
+			expectedType:  MissingCheckpoint,
+			minConfidence: 0.85,
+		},
+		{
+			name: "CUDA device-side assert triggered",
+			logs: `RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call,so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1.`,
+			expectedType:  CUDAError,
+			minConfidence: 0.88,
+		},
+		{
 			name:          "Data path error",
 			logs:          "FileNotFoundError: dataset not found at /data/train.csv",
 			expectedType:  DataPathError,

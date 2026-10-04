@@ -282,24 +282,29 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// If diagnosis already exists, return cached result (idempotent)
+	// If AI diagnosis already exists, return cached result (idempotent)
+	// Only cache AI results - rule-based fallback may improve with code changes
 	if workload.FailureReport != nil && *workload.FailureReport != "" {
 		var cachedReport diagnosis.Report
 		if err := json.Unmarshal([]byte(*workload.FailureReport), &cachedReport); err == nil {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(cachedReport)
-			return
+			if cachedReport.Source == "ai" {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(cachedReport)
+				return
+			}
 		}
 	}
 
-	// Run diagnosis (calls AI model, costs money)
+	// Run diagnosis (may call AI model which costs money)
 	report := diagnosis.RunDiagnosis(workload, s.FWClient)
 
-	// Store diagnosis in database
-	reportJSON, _ := json.Marshal(report)
-	reportStr := string(reportJSON)
-	workload.FailureReport = &reportStr
-	s.DB.UpdateWorkload(id, workload)
+	// Only store AI results - rule-based fallback should be re-run if improved
+	if report.Source == "ai" {
+		reportJSON, _ := json.Marshal(report)
+		reportStr := string(reportJSON)
+		workload.FailureReport = &reportStr
+		s.DB.UpdateWorkload(id, workload)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(report)
