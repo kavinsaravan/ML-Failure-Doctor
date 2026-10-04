@@ -65,22 +65,37 @@ func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
 
 func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType string, evidence []string, confidence float64) *Report {
 	// Build comprehensive workload data for AI diagnosis
+	runtimeStr := "unknown"
+	if workload.RuntimeSeconds != nil {
+		runtimeStr = fmt.Sprintf("%.2f", *workload.RuntimeSeconds)
+	}
+
 	workloadData := fmt.Sprintf(`Workload Information:
 - Name: %s
 - Type: %s
 - Status: %s
 - Failure Type (detected): %s
-- Runtime: %v seconds
-`, workload.Name, workload.Type, workload.Status, failureType, workload.RuntimeSeconds)
+- Runtime: %s seconds
+`, workload.Name, workload.Type, workload.Status, failureType, runtimeStr)
 
-	// Add logs evidence
+	// Add logs evidence (limit to last 10KB to prevent token overflow)
 	if workload.JobLogs != nil {
-		workloadData += fmt.Sprintf("\nJob Logs:\n%s\n", *workload.JobLogs)
+		logs := *workload.JobLogs
+		maxLogSize := 10 * 1024 // 10KB
+		if len(logs) > maxLogSize {
+			logs = "...(truncated)...\n" + logs[len(logs)-maxLogSize:]
+		}
+		workloadData += fmt.Sprintf("\nJob Logs:\n%s\n", logs)
 	}
 
-	// Add GPU metrics
+	// Add GPU metrics (limit to last 5KB)
 	if workload.GPUMetrics != nil {
-		workloadData += fmt.Sprintf("\nGPU Metrics:\n%s\n", *workload.GPUMetrics)
+		metrics := *workload.GPUMetrics
+		maxMetricsSize := 5 * 1024 // 5KB
+		if len(metrics) > maxMetricsSize {
+			metrics = "...(truncated)...\n" + metrics[len(metrics)-maxMetricsSize:]
+		}
+		workloadData += fmt.Sprintf("\nGPU Metrics:\n%s\n", metrics)
 	}
 
 	// Call Fireworks AI with function-calling for structured output

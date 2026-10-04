@@ -46,8 +46,9 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		strings.Contains(logsLower, "cuda error: out of memory") {
 		return ClassificationResult{GPUOutOfMemory, 0.95}
 	}
-	// Generic GPU OOM patterns
-	if strings.Contains(logsLower, "out of memory") || strings.Contains(logsLower, "oom") {
+	// Generic GPU OOM patterns (use word boundaries to avoid false positives like "room")
+	oomPattern := regexp.MustCompile(`\boom\b`)
+	if strings.Contains(logsLower, "out of memory") || oomPattern.MatchString(logsLower) {
 		return ClassificationResult{GPUOutOfMemory, 0.85}
 	}
 	if strings.Contains(logsLower, "rocm out of memory") ||

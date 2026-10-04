@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"crashlens/classifier"
@@ -63,8 +64,9 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 		return nil, err
 	}
 
-	// Buffer to collect all logs
+	// Buffer to collect all logs (with mutex for thread safety)
 	var logBuffer bytes.Buffer
+	var logMutex sync.Mutex
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -76,24 +78,47 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	metricsChan := make(chan MetricsSnapshot, 100)
 	go collectMetricsStream(metricsCtx, scriptPath, metricsChan)
 
+	// WaitGroup to ensure all output is read before cmd.Wait()
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	// Stream stdout
-	go streamOutput(stdout, &logBuffer, "STDOUT")
+	go func() {
+		defer wg.Done()
+		streamOutput(stdout, &logBuffer, &logMutex, "STDOUT")
+	}()
 
 	// Stream stderr
-	go streamOutput(stderr, &logBuffer, "STDERR")
+	go func() {
+		defer wg.Done()
+		streamOutput(stderr, &logBuffer, &logMutex, "STDERR")
+	}()
 
-	// Wait for command to finish
+	// Wait for all output to be read first
+	wg.Wait()
+
+	// Now it's safe to wait for the command
 	err = cmd.Wait()
 	runtime := time.Since(startTime).Seconds()
 
 	// Stop metrics collection
 	cancelMetrics()
-	close(metricsChan)
 
-	// Collect all metrics snapshots
+	// Collect all metrics snapshots with timeout to prevent deadlock
 	var allMetrics []MetricsSnapshot
-	for metric := range metricsChan {
-		allMetrics = append(allMetrics, metric)
+	timeout := time.After(500 * time.Millisecond)
+drainLoop:
+	for {
+		select {
+		case metric, ok := <-metricsChan:
+			if !ok {
+				break drainLoop
+			}
+			allMetrics = append(allMetrics, metric)
+		case <-timeout:
+			close(metricsChan)
+			break drainLoop
+		}
 	}
 
 	// Format metrics as JSON
@@ -153,11 +178,13 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 }
 
 // streamOutput reads from a pipe and writes to buffer with optional logging
-func streamOutput(reader io.Reader, buffer *bytes.Buffer, prefix string) {
+func streamOutput(reader io.Reader, buffer *bytes.Buffer, mutex *sync.Mutex, prefix string) {
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
+		mutex.Lock()
 		buffer.WriteString(line + "\n")
+		mutex.Unlock()
 		// Optionally log to console for debugging
 		// log.Printf("[%s] %s", prefix, line)
 	}
@@ -178,8 +205,13 @@ func collectMetricsStream(ctx context.Context, scriptPath string, metricsChan ch
 			return
 		case <-ticker.C:
 			snapshot := collectGPUMetricsSnapshot(jobType, iteration)
-			metricsChan <- snapshot
-			iteration++
+			// Use non-blocking send to prevent panic if channel is closed
+			select {
+			case metricsChan <- snapshot:
+				iteration++
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }
