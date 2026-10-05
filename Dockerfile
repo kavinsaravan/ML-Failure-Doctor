@@ -27,9 +27,8 @@ WORKDIR /root
 # Copy binary from builder
 COPY --from=builder /app/crashlens .
 
-# Copy jobs and agents directories
+# Copy jobs directory
 COPY jobs ./jobs
-COPY agents ./agents
 
 # Expose port
 EXPOSE 8080
