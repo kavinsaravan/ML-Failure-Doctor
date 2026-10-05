@@ -155,14 +155,3 @@ The MCP tools can be integrated with Gemma via Fireworks AI function-calling:
 └─────────────────┘
 ```
 
-## Benefits
-
-- **Controlled Access**: AI gets structured access to debugging data
-- **Standardized Interface**: MCP protocol works across different AI clients
-- **Tool Documentation**: Each tool is self-describing via JSON schemas
-- **Extensible**: Easy to add new debugging tools
-- **Safe**: Read-only access to database, no modification capabilities
-
-## Resume-Ready Line
-
-*Built an MCP tool layer exposing workload logs, GPU metrics, checkpoint state, and failure reports to a Gemma-powered AI debugging assistant.*
