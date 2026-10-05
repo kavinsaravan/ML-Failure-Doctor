@@ -270,7 +270,13 @@ npm run dev
 
 **Step 3: (Optional) MCP Server Setup**
 
-To enable Claude Desktop or other MCP clients to query your CrashLens deployment, add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+To enable Claude Desktop or other MCP clients to query your CrashLens deployment:
+
+```bash
+cd mcp-server && npm install
+```
+
+Then add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -287,7 +293,14 @@ To enable Claude Desktop or other MCP clients to query your CrashLens deployment
 }
 ```
 
+**Test the setup** with MCP Inspector before configuring Claude Desktop:
+
+```bash
+CRASHLENS_URL=https://your-backend.up.railway.app npx @modelcontextprotocol/inspector node server.js
+```
+
 See [MCP Server Documentation](./mcp-server/README.md) for more details.
+
 ---
 
 ## 🔌 API Reference

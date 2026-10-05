@@ -173,27 +173,32 @@ describe('MCP Server Tests', () => {
     assert.ok(data.error.toLowerCase().includes('not found'));
   });
 
-  it('invalid workload_id types are validated by Zod schemas', async () => {
-    setMockResponses([
-      {
-        status: 200,
-        body: { id: 1, name: 'test', job_logs: 'success' }
-      }
-    ]);
-
+  it('invalid workload_id returns isError true', async () => {
+    setMockResponses([]);
     const { client, server } = await setupTestServer();
     activeClients.push(client);
     activeServers.push(server);
 
-    // The tools have Zod schemas that validate inputs - testing that server registers them
-    const tools = await client.listTools();
-    const summaryTool = tools.tools.find(t => t.name === 'get_workload_summary');
-    
-    // Verify the tool has an inputSchema with workload_id requirement
-    assert.ok(summaryTool.inputSchema);
-    assert.ok(summaryTool.inputSchema.properties);
-    assert.ok(summaryTool.inputSchema.properties.workload_id);
-    assert.strictEqual(summaryTool.inputSchema.properties.workload_id.type, 'integer');
+    // Test with string instead of number
+    const r1 = await client.callTool({
+      name: 'get_workload_summary',
+      arguments: { workload_id: "abc" }
+    });
+    assert.strictEqual(r1.isError, true);
+
+    // Test with negative number
+    const r2 = await client.callTool({
+      name: 'get_workload_summary',
+      arguments: { workload_id: -1 }
+    });
+    assert.strictEqual(r2.isError, true);
+
+    // Test with missing workload_id
+    const r3 = await client.callTool({
+      name: 'get_workload_summary',
+      arguments: {}
+    });
+    assert.strictEqual(r3.isError, true);
   });
 
   it('backend 401 returns isError true with auth message mentioning CRASHLENS_API_KEY', async () => {
@@ -315,20 +320,16 @@ describe('MCP Server Tests', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('list_failed_workloads limit parameter has schema constraints', async () => {
+  it('list_failed_workloads with limit 500 returns isError true', async () => {
     setMockResponses([]);
     const { client, server } = await setupTestServer();
     activeClients.push(client);
     activeServers.push(server);
 
-    const tools = await client.listTools();
-    const listTool = tools.tools.find(t => t.name === 'list_failed_workloads');
-    
-    // Verify the tool has schema with limit constraints
-    assert.ok(listTool.inputSchema);
-    assert.ok(listTool.inputSchema.properties);
-    assert.ok(listTool.inputSchema.properties.limit);
-    assert.strictEqual(listTool.inputSchema.properties.limit.maximum, 100);
-    assert.strictEqual(listTool.inputSchema.properties.limit.minimum, 1);
+    const r = await client.callTool({
+      name: 'list_failed_workloads',
+      arguments: { limit: 500 }
+    });
+    assert.strictEqual(r.isError, true);
   });
 });
