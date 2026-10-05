@@ -1,16 +1,15 @@
 {
   "name": "crashlens-mcp-server",
   "version": "1.0.0",
-  "description": "MCP server for CrashLens AI Doctor",
+  "description": "MCP server for CrashLens workload debugging",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test-mcp.js",
-    "demo": "node ai-debug-demo.js"
+    "test": "node --test"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "sqlite3": "^5.1.7"
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8"
   }
 }

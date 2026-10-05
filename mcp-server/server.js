@@ -1,402 +1,491 @@
 #!/usr/bin/env node
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import sqlite3 from 'sqlite3';
-import { promisify } from 'util';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { z } from 'zod';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Configuration
+const CRASHLENS_URL = process.env.CRASHLENS_URL?.replace(/\/+$/, '');
+const CRASHLENS_API_KEY = process.env.CRASHLENS_API_KEY;
 
-// Database connection
-const dbPath = path.join(__dirname, '../backend/crashlens.db');
-const db = new sqlite3.Database(dbPath);
-const dbGet = promisify(db.get.bind(db));
-const dbAll = promisify(db.all.bind(db));
+if (!CRASHLENS_URL) {
+  console.error('Error: CRASHLENS_URL environment variable is required');
+  console.error('Example: export CRASHLENS_URL=https://your-backend.up.railway.app');
+  process.exit(1);
+}
 
-// MCP Server for CrashLens AI Doctor
-const server = new Server(
+// Error types
+class NotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+class AuthError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
+class NetworkError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
+
+class BackendError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = 'BackendError';
+    this.status = status;
+  }
+}
+
+// API helper
+async function apiGet(path) {
+  const url = `${CRASHLENS_URL}${path}`;
+  const headers = {};
+  if (CRASHLENS_API_KEY) {
+    headers['Authorization'] = `Bearer ${CRASHLENS_API_KEY}`;
+  }
+
+  try {
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (response.status === 404) {
+      throw new NotFoundError(`Resource not found: ${path}`);
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      throw new AuthError('Authentication failed. Check CRASHLENS_API_KEY environment variable.');
+    }
+
+    if (!response.ok) {
+      throw new BackendError(`Backend error: ${response.status} ${response.statusText}`, response.status);
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (error instanceof NotFoundError || error instanceof AuthError || error instanceof BackendError) {
+      throw error;
+    }
+    if (error.name === 'AbortError') {
+      throw new NetworkError('Request timeout after 10 seconds');
+    }
+    throw new NetworkError(`Network error: ${error.message}`);
+  }
+}
+
+// Helper to parse JSON fields safely
+function parseJsonField(field) {
+  if (!field) return null;
+  try {
+    return JSON.parse(field);
+  } catch {
+    return null;
+  }
+}
+
+// Helper to downsample metrics to 300 points
+function downsample(samples, targetCount) {
+  if (samples.length <= targetCount) return samples;
+
+  const step = samples.length / targetCount;
+  const downsampled = [];
+
+  for (let i = 0; i < targetCount; i++) {
+    const index = Math.floor(i * step);
+    downsampled.push(samples[index]);
+  }
+
+  return downsampled;
+}
+
+// Create MCP server
+const server = new McpServer({
+  name: 'crashlens-mcp-server',
+  version: '1.0.0',
+});
+
+// Tool: get_workload_logs
+server.registerTool(
+  'get_workload_logs',
   {
-    name: 'crashlens-mcp-server',
-    version: '1.0.0',
+    description: 'Retrieve job execution logs for a specific workload. Returns the last N lines of stdout/stderr from the ML job.',
+    inputSchema: z.object({
+      workload_id: z.number().int().positive(),
+      tail: z.number().int().min(1).max(2000).optional().default(200)
+    })
   },
-  {
-    capabilities: {
-      tools: {},
-    },
+  async ({ workload_id, tail }) => {
+    try {
+      const workload = await apiGet(`/workloads/${workload_id}`);
+
+      if (!workload.job_logs) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              workload_id,
+              logs: null,
+              total_lines: 0,
+              truncated: false,
+              message: 'No logs available'
+            })
+          }]
+        };
+      }
+
+      const lines = workload.job_logs.split('\n');
+      const total_lines = lines.length;
+      const truncated = total_lines > tail;
+      const logs = truncated ? lines.slice(-tail).join('\n') : workload.job_logs;
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            workload_id,
+            logs,
+            total_lines,
+            truncated
+          })
+        }]
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: error.message })
+        }],
+        isError: true
+      };
+    }
   }
 );
 
-// Define tools available to AI Doctor
-const TOOLS = [
+// Tool: get_gpu_metrics
+server.registerTool(
+  'get_gpu_metrics',
   {
-    name: 'get_workload_logs',
-    description: 'Retrieve job execution logs for a specific workload. Returns stdout/stderr from the ML job or agent run.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workload_id: {
-          type: 'number',
-          description: 'The ID of the workload to retrieve logs for',
-        },
-      },
-      required: ['workload_id'],
-    },
+    description: 'Get GPU memory usage, utilization, and temperature metrics collected during workload execution. Metrics come from the CrashLens SDK (NVIDIA via nvidia-ml-py, memory via torch.cuda on CUDA/ROCm) or are simulated for demo jobs.',
+    inputSchema: z.object({
+      workload_id: z.number().int().positive()
+    })
   },
-  {
-    name: 'get_gpu_metrics',
-    description: 'Get GPU memory usage, utilization, and temperature metrics collected during workload execution. Returns time-series data from rocm-smi.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workload_id: {
-          type: 'number',
-          description: 'The ID of the workload to retrieve GPU metrics for',
-        },
-      },
-      required: ['workload_id'],
-    },
-  },
-  {
-    name: 'get_failure_report',
-    description: 'Retrieve the AI-generated failure diagnosis report including root cause, evidence, and recommended fixes.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workload_id: {
-          type: 'number',
-          description: 'The ID of the workload to retrieve failure report for',
-        },
-      },
-      required: ['workload_id'],
-    },
-  },
-  {
-    name: 'get_checkpoint_state',
-    description: 'Get checkpoint information for a workload, including paths and whether checkpoint was found.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workload_id: {
-          type: 'number',
-          description: 'The ID of the workload to retrieve checkpoint state for',
-        },
-      },
-      required: ['workload_id'],
-    },
-  },
-  {
-    name: 'get_wasted_gpu_time',
-    description: 'Calculate wasted GPU-seconds for a failed workload. Helps quantify cost impact of failures.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workload_id: {
-          type: 'number',
-          description: 'The ID of the workload to calculate wasted GPU time for',
-        },
-      },
-      required: ['workload_id'],
-    },
-  },
-  {
-    name: 'list_failed_workloads',
-    description: 'List all failed workloads with their failure types. Useful for identifying patterns.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: {
-          type: 'number',
-          description: 'Maximum number of workloads to return (default: 10)',
-          default: 10,
-        },
-      },
-    },
-  },
-  {
-    name: 'get_workload_summary',
-    description: 'Get complete summary of a workload including status, runtime, failure type, and all available metadata.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workload_id: {
-          type: 'number',
-          description: 'The ID of the workload to retrieve summary for',
-        },
-      },
-      required: ['workload_id'],
-    },
-  },
-];
+  async ({ workload_id }) => {
+    try {
+      const workload = await apiGet(`/workloads/${workload_id}`);
 
-// Tool handlers
-async function getWorkloadLogs(workloadId) {
-  const workload = await dbGet('SELECT job_logs FROM workloads WHERE id = ?', [workloadId]);
+      const metrics = parseJsonField(workload.gpu_metrics);
 
-  if (!workload) {
-    return { error: `Workload ${workloadId} not found` };
-  }
-
-  if (!workload.job_logs) {
-    return { workload_id: workloadId, logs: null, message: 'No logs available' };
-  }
-
-  return {
-    workload_id: workloadId,
-    logs: workload.job_logs,
-    line_count: workload.job_logs.split('\n').length,
-  };
-}
-
-async function getGpuMetrics(workloadId) {
-  const workload = await dbGet('SELECT gpu_metrics FROM workloads WHERE id = ?', [workloadId]);
-
-  if (!workload) {
-    return { error: `Workload ${workloadId} not found` };
-  }
-
-  if (!workload.gpu_metrics) {
-    return { workload_id: workloadId, metrics: null, message: 'No GPU metrics available' };
-  }
-
-  const metrics = JSON.parse(workload.gpu_metrics);
-  const peakMemory = metrics.reduce((max, m) =>
-    m.gpu_memory_percent > max.gpu_memory_percent ? m : max,
-    metrics[0]
-  );
-
-  return {
-    workload_id: workloadId,
-    metrics: metrics,
-    summary: {
-      peak_memory_mb: peakMemory.gpu_memory_used_mb,
-      peak_memory_percent: peakMemory.gpu_memory_percent,
-      avg_utilization: metrics.reduce((sum, m) => sum + m.gpu_utilization_percent, 0) / metrics.length,
-      data_points: metrics.length,
-    },
-  };
-}
-
-async function getFailureReport(workloadId) {
-  const workload = await dbGet('SELECT failure_report FROM workloads WHERE id = ?', [workloadId]);
-
-  if (!workload) {
-    return { error: `Workload ${workloadId} not found` };
-  }
-
-  if (!workload.failure_report) {
-    return { workload_id: workloadId, report: null, message: 'No failure report available. Run diagnosis first.' };
-  }
-
-  return {
-    workload_id: workloadId,
-    report: JSON.parse(workload.failure_report),
-  };
-}
-
-async function getCheckpointState(workloadId) {
-  const workload = await dbGet('SELECT checkpoint_state FROM workloads WHERE id = ?', [workloadId]);
-
-  if (!workload) {
-    return { error: `Workload ${workloadId} not found` };
-  }
-
-  if (!workload.checkpoint_state) {
-    return { workload_id: workloadId, checkpoint_state: null, message: 'No checkpoint state information' };
-  }
-
-  return {
-    workload_id: workloadId,
-    checkpoint_state: JSON.parse(workload.checkpoint_state),
-  };
-}
-
-async function getWastedGpuTime(workloadId) {
-  const workload = await dbGet(
-    'SELECT wasted_gpu_seconds, runtime_seconds, status, failure_type FROM workloads WHERE id = ?',
-    [workloadId]
-  );
-
-  if (!workload) {
-    return { error: `Workload ${workloadId} not found` };
-  }
-
-  const wastedSeconds = workload.wasted_gpu_seconds || 0;
-  const wastedMinutes = (wastedSeconds / 60).toFixed(2);
-  const wastedHours = (wastedSeconds / 3600).toFixed(2);
-
-  return {
-    workload_id: workloadId,
-    status: workload.status,
-    failure_type: workload.failure_type,
-    wasted_gpu_seconds: wastedSeconds,
-    wasted_gpu_minutes: parseFloat(wastedMinutes),
-    wasted_gpu_hours: parseFloat(wastedHours),
-    runtime_seconds: workload.runtime_seconds,
-  };
-}
-
-async function listFailedWorkloads(limit = 10) {
-  const workloads = await dbAll(
-    'SELECT id, name, type, status, failure_type, runtime_seconds, wasted_gpu_seconds, created_at FROM workloads WHERE status = ? ORDER BY created_at DESC LIMIT ?',
-    ['failed', limit]
-  );
-
-  return {
-    total: workloads.length,
-    workloads: workloads.map(w => ({
-      id: w.id,
-      name: w.name,
-      type: w.type,
-      failure_type: w.failure_type,
-      runtime_seconds: w.runtime_seconds,
-      wasted_gpu_seconds: w.wasted_gpu_seconds,
-      created_at: w.created_at,
-    })),
-  };
-}
-
-async function getWorkloadSummary(workloadId) {
-  const workload = await dbGet('SELECT * FROM workloads WHERE id = ?', [workloadId]);
-
-  if (!workload) {
-    return { error: `Workload ${workloadId} not found` };
-  }
-
-  return {
-    id: workload.id,
-    name: workload.name,
-    type: workload.type,
-    status: workload.status,
-    failure_type: workload.failure_type,
-    created_at: workload.created_at,
-    started_at: workload.started_at,
-    finished_at: workload.finished_at,
-    runtime_seconds: workload.runtime_seconds,
-    exit_code: workload.exit_code,
-    wasted_gpu_seconds: workload.wasted_gpu_seconds,
-    has_logs: !!workload.job_logs,
-    has_metrics: !!workload.gpu_metrics,
-    has_failure_report: !!workload.failure_report,
-    has_checkpoint_state: !!workload.checkpoint_state,
-  };
-}
-
-// Register tool handlers
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools: TOOLS };
-});
-
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  try {
-    switch (name) {
-      case 'get_workload_logs':
+      if (!metrics || metrics.length === 0) {
         return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await getWorkloadLogs(args.workload_id), null, 2),
-            },
-          ],
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              workload_id,
+              metrics: [],
+              summary: null,
+              message: 'No GPU metrics recorded'
+            })
+          }]
         };
+      }
 
-      case 'get_gpu_metrics':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await getGpuMetrics(args.workload_id), null, 2),
-            },
-          ],
-        };
+      // Compute summary over all samples
+      const nonNullUtil = metrics.filter(m => m.gpu_utilization_percent != null);
+      const avg_utilization_percent = nonNullUtil.length > 0
+        ? nonNullUtil.reduce((sum, m) => sum + m.gpu_utilization_percent, 0) / nonNullUtil.length
+        : null;
 
-      case 'get_failure_report':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await getFailureReport(args.workload_id), null, 2),
-            },
-          ],
-        };
+      const peakMemory = metrics.reduce((max, m) =>
+        m.gpu_memory_percent > (max?.gpu_memory_percent ?? 0) ? m : max
+      );
 
-      case 'get_checkpoint_state':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await getCheckpointState(args.workload_id), null, 2),
-            },
-          ],
-        };
+      const peakAllocated = metrics.find(m => m.gpu_memory_peak_mb != null);
 
-      case 'get_wasted_gpu_time':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await getWastedGpuTime(args.workload_id), null, 2),
-            },
-          ],
-        };
+      const summary = {
+        peak_memory_mb: peakMemory.gpu_memory_used_mb,
+        peak_memory_percent: peakMemory.gpu_memory_percent,
+        avg_utilization_percent,
+        data_points: metrics.length,
+        ...(peakAllocated && { peak_allocated_mb: Math.max(...metrics.map(m => m.gpu_memory_peak_mb || 0)) })
+      };
 
-      case 'list_failed_workloads':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await listFailedWorkloads(args.limit || 10), null, 2),
-            },
-          ],
-        };
+      // Downsample for response
+      const downsampledMetrics = downsample(metrics, 300);
 
-      case 'get_workload_summary':
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(await getWorkloadSummary(args.workload_id), null, 2),
-            },
-          ],
-        };
-
-      default:
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({ error: `Unknown tool: ${name}` }),
-            },
-          ],
-          isError: true,
-        };
-    }
-  } catch (error) {
-    return {
-      content: [
-        {
+      return {
+        content: [{
           type: 'text',
-          text: JSON.stringify({ error: error.message }),
-        },
-      ],
-      isError: true,
-    };
+          text: JSON.stringify({
+            workload_id,
+            metrics: downsampledMetrics,
+            summary
+          })
+        }]
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: error.message })
+        }],
+        isError: true
+      };
+    }
   }
-});
+);
+
+// Tool: get_failure_report
+server.registerTool(
+  'get_failure_report',
+  {
+    description: 'Retrieve the AI-generated failure diagnosis report including root cause, evidence, and recommended fixes.',
+    inputSchema: z.object({
+      workload_id: z.number().int().positive()
+    })
+  },
+  async ({ workload_id }) => {
+    try {
+      const workload = await apiGet(`/workloads/${workload_id}`);
+
+      const report = parseJsonField(workload.failure_report);
+
+      if (!report) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              workload_id,
+              report: null,
+              message: `No failure report available. Run diagnosis with: POST /workloads/${workload_id}/diagnose`
+            })
+          }]
+        };
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            workload_id,
+            report
+          })
+        }]
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: error.message })
+        }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: get_checkpoint_state
+server.registerTool(
+  'get_checkpoint_state',
+  {
+    description: 'Get checkpoint information for a workload, including paths and whether checkpoint was found.',
+    inputSchema: z.object({
+      workload_id: z.number().int().positive()
+    })
+  },
+  async ({ workload_id }) => {
+    try {
+      const workload = await apiGet(`/workloads/${workload_id}`);
+
+      const checkpoint_state = parseJsonField(workload.checkpoint_state);
+
+      if (!checkpoint_state) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              workload_id,
+              checkpoint_state: null,
+              message: 'No checkpoint state information'
+            })
+          }]
+        };
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            workload_id,
+            checkpoint_state
+          })
+        }]
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: error.message })
+        }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: get_wasted_gpu_time
+server.registerTool(
+  'get_wasted_gpu_time',
+  {
+    description: 'Calculate wasted GPU-seconds for a failed workload. Helps quantify cost impact of failures.',
+    inputSchema: z.object({
+      workload_id: z.number().int().positive()
+    })
+  },
+  async ({ workload_id }) => {
+    try {
+      const workload = await apiGet(`/workloads/${workload_id}`);
+
+      const wasted_seconds = workload.wasted_gpu_seconds || 0;
+      const wasted_minutes = wasted_seconds / 60;
+      const wasted_hours = wasted_seconds / 3600;
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            workload_id,
+            status: workload.status,
+            seconds: wasted_seconds,
+            minutes: wasted_minutes,
+            hours: wasted_hours,
+            runtime: workload.runtime_seconds
+          })
+        }]
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: error.message })
+        }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: list_failed_workloads
+server.registerTool(
+  'list_failed_workloads',
+  {
+    description: 'List all failed workloads with their failure types. Useful for identifying patterns.',
+    inputSchema: z.object({
+      limit: z.number().int().min(1).max(100).optional().default(10)
+    })
+  },
+  async ({ limit }) => {
+    try {
+      const workloads = await apiGet('/workloads');
+
+      const failed = workloads
+        .filter(w => w.status === 'failed')
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, limit)
+        .map(w => ({
+          id: w.id,
+          name: w.name,
+          type: w.type,
+          failure_type: w.failure_type,
+          runtime_seconds: w.runtime_seconds,
+          wasted_gpu_seconds: w.wasted_gpu_seconds,
+          created_at: w.created_at
+        }));
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            total: failed.length,
+            workloads: failed
+          })
+        }]
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: error.message })
+        }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: get_workload_summary
+server.registerTool(
+  'get_workload_summary',
+  {
+    description: 'Get complete summary of a workload including status, runtime, failure type, and all available metadata.',
+    inputSchema: z.object({
+      workload_id: z.number().int().positive()
+    })
+  },
+  async ({ workload_id }) => {
+    try {
+      const workload = await apiGet(`/workloads/${workload_id}`);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            id: workload.id,
+            name: workload.name,
+            type: workload.type,
+            status: workload.status,
+            failure_type: workload.failure_type,
+            created_at: workload.created_at,
+            started_at: workload.started_at,
+            finished_at: workload.finished_at,
+            runtime_seconds: workload.runtime_seconds,
+            exit_code: workload.exit_code,
+            wasted_gpu_seconds: workload.wasted_gpu_seconds,
+            has_logs: !!workload.job_logs,
+            has_metrics: !!workload.gpu_metrics,
+            has_failure_report: !!workload.failure_report,
+            has_checkpoint_state: !!workload.checkpoint_state
+          })
+        }]
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: error.message })
+        }],
+        isError: true
+      };
+    }
+  }
+);
 
 // Start server
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('CrashLens MCP Server running on stdio');
+  console.error(`Connected to: ${CRASHLENS_URL}`);
+  console.error(`Authentication: ${CRASHLENS_API_KEY ? 'enabled' : 'disabled'}`);
 }
 
 main().catch((error) => {

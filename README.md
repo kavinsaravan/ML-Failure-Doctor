@@ -49,15 +49,20 @@ CrashLens provides first-class support for Jupyter notebooks:
 See [Jupyter Integration Guide](./docs/JUPYTER_INTEGRATION.md) for detailed usage.
 
 ###  Model Context Protocol (MCP) Integration
-CrashLens exposes diagnostic capabilities through standardized MCP tools:
+CrashLens provides an optional MCP server that lets Claude Desktop and other MCP clients query workload data via 7 standardized tools:
 - `get_workload_logs` - Retrieve execution logs and error traces
 - `get_gpu_metrics` - Access GPU memory, utilization, temperature data
-- `get_failure_report` - Get AI-generated diagnosis reports
+- `get_failure_report` - Get AI-generated diagnosis reports (created by the backend's Gemma 2 integration)
 - `get_checkpoint_state` - View checkpoint availability
 - `get_wasted_gpu_time` - Calculate failure cost impact
 - `list_failed_workloads` - Query failed workloads with filters
+- `get_workload_summary` - Get complete workload metadata
 
-See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifications.
+**Two separate AI integration paths:**
+1. **Backend AI Diagnosis (Gemma 2)**: When you call `POST /workloads/{id}/diagnose`, the Go backend sends logs and metrics directly to Gemma 2 via Fireworks AI (configured with `FIREWORKS_API_KEY` and `FIREWORKS_MODEL`). This produces the failure reports stored in the database.
+2. **MCP Client Queries**: External tools like Claude Desktop can use the MCP server to retrieve these reports and other workload data. The MCP server calls the CrashLens REST API; it does not invoke Gemma directly.
+
+See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed tool specifications.
 
 ---
 
@@ -265,7 +270,7 @@ npm run dev
 
 **Step 3: (Optional) MCP Server Setup**
 
-For advanced Model Context Protocol features, open a **third terminal**:
+To enable Claude Desktop or other MCP clients to query your CrashLens deployment:
 
 ```bash
 # Navigate to MCP server directory (from project root)
@@ -274,9 +279,32 @@ cd mcp-server
 # Install dependencies
 npm install
 
-# Start the MCP server
+# Configure connection to your backend
+export CRASHLENS_URL=http://localhost:8080  # or your deployed backend URL
+export CRASHLENS_API_KEY=your_api_key_here  # optional, if backend requires auth
+
+# Start the MCP server (runs on stdio for MCP protocol)
 npm start
 ```
+
+**For Claude Desktop integration**, add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "crashlens": {
+      "command": "node",
+      "args": ["/absolute/path/to/ML-Failure-Doctor/mcp-server/server.js"],
+      "env": {
+        "CRASHLENS_URL": "http://localhost:8080",
+        "CRASHLENS_API_KEY": "your-api-key-if-required"
+      }
+    }
+  }
+}
+```
+
+See [MCP Server Documentation](./mcp-server/README.md) for more details.
 ---
 
 ## 🔌 API Reference
