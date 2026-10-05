@@ -20,7 +20,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o crashlens .
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk --no-cache add ca-certificates sqlite-libs python3
+RUN apk update && apk add --no-cache ca-certificates sqlite-libs python3
 
 WORKDIR /root
 
