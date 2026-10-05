@@ -458,7 +458,7 @@ export function createServer({ url, apiKey }) {
               exit_code: workload.exit_code,
               wasted_gpu_seconds: workload.wasted_gpu_seconds,
               has_logs: !!workload.job_logs,
-              has_metrics: !!parseJsonField(workload.gpu_metrics),
+              has_metrics: (parseJsonField(workload.gpu_metrics) ?? []).length > 0,
               has_failure_report: !!parseJsonField(workload.failure_report),
               has_checkpoint_state: !!parseJsonField(workload.checkpoint_state)
             })

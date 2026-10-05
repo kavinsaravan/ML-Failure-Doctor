@@ -151,6 +151,33 @@ describe('MCP Server Tests', () => {
     assert.strictEqual(data.summary.avg_utilization_percent, null);
   });
 
+  it('get_workload_summary with empty metrics array returns has_metrics false', async () => {
+    setMockResponses([
+      {
+        status: 200,
+        body: {
+          id: 1,
+          name: 'test',
+          gpu_metrics: '[]',
+          job_logs: 'test logs'
+        }
+      }
+    ]);
+
+    const { client, server } = await setupTestServer();
+    activeClients.push(client);
+    activeServers.push(server);
+
+    const result = await client.callTool({
+      name: 'get_workload_summary',
+      arguments: { workload_id: 1 }
+    });
+
+    const data = JSON.parse(result.content[0].text);
+    assert.strictEqual(data.has_metrics, false);
+    assert.strictEqual(data.has_logs, true);
+  });
+
   it('any tool with nonexistent ID returns isError true with "not found" message', async () => {
     setMockResponses([
       {
