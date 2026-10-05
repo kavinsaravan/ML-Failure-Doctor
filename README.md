@@ -270,24 +270,7 @@ npm run dev
 
 **Step 3: (Optional) MCP Server Setup**
 
-To enable Claude Desktop or other MCP clients to query your CrashLens deployment:
-
-```bash
-# Navigate to MCP server directory (from project root)
-cd mcp-server
-
-# Install dependencies
-npm install
-
-# Configure connection to your backend
-export CRASHLENS_URL=http://localhost:8080  # or your deployed backend URL
-export CRASHLENS_API_KEY=your_api_key_here  # optional, if backend requires auth
-
-# Start the MCP server (runs on stdio for MCP protocol)
-npm start
-```
-
-**For Claude Desktop integration**, add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+To enable Claude Desktop or other MCP clients to query your CrashLens deployment, add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {

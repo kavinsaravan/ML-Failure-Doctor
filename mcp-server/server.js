@@ -80,7 +80,8 @@ export function createServer({ url, apiKey }) {
       });
 
       if (response.status === 404) {
-        throw new NotFoundError(`Resource not found: ${path}`);
+        const workloadId = path.match(/\/workloads\/(\d+)/)?.[1];
+        throw new NotFoundError(workloadId ? `Workload ${workloadId} not found` : 'Resource not found');
       }
 
       if (response.status === 401 || response.status === 403) {
