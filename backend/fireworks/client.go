@@ -3,30 +3,32 @@ package fireworks
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 type FunctionParameter struct {
-	Type        string                       `json:"type"`
-	Properties  map[string]PropertySchema    `json:"properties,omitempty"`
-	Items       *PropertySchema              `json:"items,omitempty"`
-	Description string                       `json:"description,omitempty"`
-	Required    []string                     `json:"required,omitempty"`
+	Type        string                    `json:"type"`
+	Properties  map[string]PropertySchema `json:"properties,omitempty"`
+	Items       *PropertySchema           `json:"items,omitempty"`
+	Description string                    `json:"description,omitempty"`
+	Required    []string                  `json:"required,omitempty"`
 }
 
 type PropertySchema struct {
-	Type        string   `json:"type"`
-	Description string   `json:"description,omitempty"`
+	Type        string          `json:"type"`
+	Description string          `json:"description,omitempty"`
 	Items       *PropertySchema `json:"items,omitempty"`
 }
 
 type Function struct {
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Parameters  FunctionParameter  `json:"parameters"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Parameters  FunctionParameter `json:"parameters"`
 }
 
 type Tool struct {
@@ -35,8 +37,8 @@ type Tool struct {
 }
 
 type ToolChoice struct {
-	Type     string               `json:"type"`
-	Function FunctionCallChoice   `json:"function"`
+	Type     string             `json:"type"`
+	Function FunctionCallChoice `json:"function"`
 }
 
 type FunctionCallChoice struct {
@@ -44,23 +46,23 @@ type FunctionCallChoice struct {
 }
 
 type Request struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	MaxTokens   int       `json:"max_tokens"`
-	Tools       []Tool    `json:"tools,omitempty"`
-	ToolChoice  *ToolChoice `json:"tool_choice,omitempty"`
+	Model      string      `json:"model"`
+	Messages   []Message   `json:"messages"`
+	MaxTokens  int         `json:"max_tokens"`
+	Tools      []Tool      `json:"tools,omitempty"`
+	ToolChoice *ToolChoice `json:"tool_choice,omitempty"`
 }
 
 type Message struct {
-	Role       string      `json:"role"`
-	Content    string      `json:"content,omitempty"`
-	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
+	Role      string     `json:"role"`
+	Content   string     `json:"content,omitempty"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
 type ToolCall struct {
-	ID       string               `json:"id"`
-	Type     string               `json:"type"`
-	Function FunctionCallResult   `json:"function"`
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Function FunctionCallResult `json:"function"`
 }
 
 type FunctionCallResult struct {
@@ -178,10 +180,10 @@ Provide:
 	}
 
 	reqBody := Request{
-		Model:      c.Model,
-		Messages:   messages,
-		MaxTokens:  2000,
-		Tools:      []Tool{diagnosisFunction},
+		Model:     c.Model,
+		Messages:  messages,
+		MaxTokens: 2000,
+		Tools:     []Tool{diagnosisFunction},
 		ToolChoice: &ToolChoice{
 			Type: "function",
 			Function: FunctionCallChoice{
@@ -210,7 +212,7 @@ Provide:
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil
+		return nil, fmt.Errorf("Fireworks returned HTTP %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -239,6 +241,9 @@ Provide:
 		return nil, err
 	}
 
+	if message.ToolCalls[0].Function.Name != "diagnose_ml_failure" || strings.TrimSpace(result.RootCause) == "" || len(result.RecommendedFixes) == 0 || len(result.Evidence) == 0 {
+		return nil, fmt.Errorf("Fireworks returned an incomplete diagnosis")
+	}
 	return &result, nil
 }
 

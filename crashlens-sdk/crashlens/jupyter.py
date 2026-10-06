@@ -5,6 +5,10 @@ Provides IPython magic commands, rich display, and inline visualizations for Jup
 """
 
 import os
+import json
+import logging
+from html import escape
+from .workload_tracker import WorkloadTracker
 import time
 import requests
 from typing import Optional, Dict, Any, List
@@ -32,7 +36,7 @@ except ImportError:
     cell_magic = lambda x: x
 
 
-class JupyterWorkloadTracker:
+class JupyterWorkloadTracker(WorkloadTracker):
     """
     Enhanced WorkloadTracker for Jupyter notebooks with rich display and inline metrics.
 
@@ -52,13 +56,8 @@ class JupyterWorkloadTracker:
     """
 
     def __init__(self, api_url: str, api_key: Optional[str] = None):
-        self.api_url = api_url.rstrip('/')
-        self.api_key = api_key
-        self.workload_id: Optional[int] = None
+        super().__init__(api_url, api_key)
         self.in_jupyter = self._check_jupyter()
-        self.headers = {'Content-Type': 'application/json'}
-        if api_key:
-            self.headers['Authorization'] = f'Bearer {api_key}'
 
     def _check_jupyter(self) -> bool:
         """Check if running in Jupyter environment"""
@@ -70,28 +69,9 @@ class JupyterWorkloadTracker:
         except:
             return False
 
-    def _create_workload(self, name: str) -> int:
-        """Create a workload entry"""
-        response = requests.post(
-            f"{self.api_url}/workloads",
-            json={
-                "name": name,
-                "type": "ML_JOB",
-                "status": "running"
-            },
-            headers=self.headers
-        )
-        response.raise_for_status()
-        return response.json()["id"]
-
-    def _update_workload(self, workload_id: int, status: str, **kwargs):
-        """Update workload status"""
-        data = {"status": status, **kwargs}
-        requests.put(f"{self.api_url}/workloads/{workload_id}", json=data, headers=self.headers)
-
     def _get_workload(self, workload_id: int) -> Dict[str, Any]:
         """Get workload details"""
-        response = requests.get(f"{self.api_url}/workloads/{workload_id}", headers=self.headers)
+        response = requests.get(f"{self.api_url}/workloads/{workload_id}", headers=self.headers, timeout=15)
         response.raise_for_status()
         return response.json()
 
@@ -101,9 +81,11 @@ class JupyterWorkloadTracker:
             return
 
         try:
-            response = requests.get(f"{self.api_url}/workloads/{workload_id}/metrics", headers=self.headers)
+            response = requests.get(f"{self.api_url}/workloads/{workload_id}/metrics", headers=self.headers, timeout=15)
             if response.status_code == 200:
-                metrics = response.json()
+                metrics = response.json().get("metrics", "")
+                if isinstance(metrics, str):
+                    metrics = json.loads(metrics) if metrics else []
                 if metrics and isinstance(metrics, list):
                     # Convert to DataFrame for nice display
                     df = pd.DataFrame(metrics)
@@ -116,41 +98,49 @@ class JupyterWorkloadTracker:
 
     def _display_diagnosis(self, diagnosis: Dict[str, Any]):
         """Display diagnosis with rich HTML formatting"""
+        # The backend report uses a single formatted recommended_fix string.
+        fixes = diagnosis.get("recommended_fix", "").splitlines()
+        if not fixes:
+            fixes = diagnosis.get("recommended_fixes", [])
+        prevention = diagnosis.get("prevention", "")
+        if isinstance(prevention, str):
+            prevention = [prevention] if prevention else []
+        source_label = "AI-assisted" if diagnosis.get("source") == "ai" else "Rule-based"
         if not self.in_jupyter:
-            print(f"Root Cause: {diagnosis.get('root_cause', 'Unknown')}")
+            print(f"Root Cause: {escape(str(diagnosis.get('root_cause', 'Unknown')))}")
             print(f"\nRecommended Fixes:")
-            for fix in diagnosis.get('recommended_fixes', []):
+            for fix in fixes:
                 print(f"  • {fix}")
             return
 
         # Rich HTML display for Jupyter
         html = f"""
         <div style="border: 2px solid #e74c3c; border-radius: 8px; padding: 20px; margin: 10px 0; background-color: #fdf2f2;">
-            <h3 style="color: #c0392b; margin-top: 0;">🔍 AI Diagnosis Report</h3>
+            <h3 style="color: #c0392b; margin-top: 0;">🔍 {source_label} Diagnosis Report</h3>
 
             <div style="margin: 15px 0;">
                 <strong style="color: #2c3e50;">Root Cause:</strong>
-                <p style="margin: 5px 0 0 20px; color: #34495e;">{diagnosis.get('root_cause', 'Unknown')}</p>
+                <p style="margin: 5px 0 0 20px; color: #34495e;">{escape(str(diagnosis.get('root_cause', 'Unknown')))}</p>
             </div>
 
             <div style="margin: 15px 0;">
                 <strong style="color: #2c3e50;">Evidence:</strong>
                 <ul style="margin: 5px 0 0 20px; color: #34495e;">
-                    {''.join([f'<li><code>{e}</code></li>' for e in diagnosis.get('evidence', [])])}
+                    {''.join([f'<li><code>{escape(str(e))}</code></li>' for e in diagnosis.get('evidence', [])])}
                 </ul>
             </div>
 
             <div style="margin: 15px 0;">
                 <strong style="color: #2c3e50;">✅ Recommended Fixes:</strong>
                 <ol style="margin: 5px 0 0 20px; color: #34495e;">
-                    {''.join([f'<li>{f}</li>' for f in diagnosis.get('recommended_fixes', [])])}
+                    {''.join([f'<li>{escape(str(f))}</li>' for f in fixes])}
                 </ol>
             </div>
 
             <div style="margin: 15px 0;">
                 <strong style="color: #2c3e50;">Prevention:</strong>
                 <ul style="margin: 5px 0 0 20px; color: #34495e;">
-                    {''.join([f'<li>{p}</li>' for p in diagnosis.get('prevention', [])])}
+                    {''.join([f'<li>{escape(str(p))}</li>' for p in prevention])}
                 </ul>
             </div>
 
@@ -162,7 +152,7 @@ class JupyterWorkloadTracker:
             </div>
 
             <div style="margin-top: 10px; font-size: 0.9em; color: #7f8c8d;">
-                Confidence: {diagnosis.get('confidence', 0) * 100:.1f}%
+                Heuristic log-match score: {diagnosis.get('confidence', 0) * 100:.1f}% (not measured accuracy)
             </div>
         </div>
         """
@@ -177,7 +167,7 @@ class JupyterWorkloadTracker:
         html = f"""
         <div style="border: 2px solid #3498db; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #ebf5fb;">
             <h4 style="color: #2980b9; margin: 0;">{status_emoji} Workload Running</h4>
-            <p style="margin: 10px 0 0 0;"><strong>Name:</strong> {name}</p>
+            <p style="margin: 10px 0 0 0;"><strong>Name:</strong> {escape(str(name))}</p>
             <p style="margin: 5px 0 0 0;"><strong>Workload ID:</strong> {workload_id}</p>
             <p style="margin: 5px 0 0 0;"><strong>Elapsed:</strong> {elapsed:.1f}s</p>
         </div>
@@ -187,17 +177,17 @@ class JupyterWorkloadTracker:
     def _display_success(self, name: str, runtime: float, workload_id: int):
         """Display success message"""
         if not self.in_jupyter:
-            print(f"✓ Workload '{name}' completed successfully in {runtime:.1f}s")
+            print(f"✓ Workload '{escape(str(name))}' completed successfully in {runtime:.1f}s")
             return
 
         html = f"""
         <div style="border: 2px solid #27ae60; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #eafaf1;">
             <h4 style="color: #27ae60; margin: 0;">✓ Workload Completed Successfully</h4>
-            <p style="margin: 10px 0 0 0;"><strong>Name:</strong> {name}</p>
+            <p style="margin: 10px 0 0 0;"><strong>Name:</strong> {escape(str(name))}</p>
             <p style="margin: 5px 0 0 0;"><strong>Runtime:</strong> {runtime:.1f}s</p>
             <p style="margin: 5px 0 0 0;"><strong>Workload ID:</strong> {workload_id}</p>
             <p style="margin: 10px 0 0 0; font-size: 0.9em; color: #7f8c8d;">
-                View details: <a href="{self.api_url.replace('//', '//frontend-')}/workloads/{workload_id}" target="_blank">Dashboard</a>
+                Open workload #{workload_id} in your CrashLens dashboard.
             </p>
         </div>
         """
@@ -206,14 +196,14 @@ class JupyterWorkloadTracker:
     def _display_failure(self, name: str, runtime: float, workload_id: int, error: str):
         """Display failure message"""
         if not self.in_jupyter:
-            print(f"✗ Workload '{name}' failed after {runtime:.1f}s")
+            print(f"✗ Workload '{escape(str(name))}' failed after {runtime:.1f}s")
             print(f"Error: {error}")
             return
 
         html = f"""
         <div style="border: 2px solid #e74c3c; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #fdf2f2;">
             <h4 style="color: #c0392b; margin: 0;">✗ Workload Failed</h4>
-            <p style="margin: 10px 0 0 0;"><strong>Name:</strong> {name}</p>
+            <p style="margin: 10px 0 0 0;"><strong>Name:</strong> {escape(str(name))}</p>
             <p style="margin: 5px 0 0 0;"><strong>Runtime:</strong> {runtime:.1f}s</p>
             <p style="margin: 5px 0 0 0;"><strong>Workload ID:</strong> {workload_id}</p>
             <p style="margin: 10px 0 0 0; font-size: 0.9em; color: #7f8c8d;">
@@ -237,95 +227,32 @@ class JupyterWorkloadTracker:
             with tracker.track("Training ResNet", display_metrics=True):
                 model.fit(X_train, y_train)
         """
-        import sys
-        import traceback
-
-        workload_id = self._create_workload(name)
-        start_time = time.time()
-        logs = []
-
-        # Start GPU metrics collection
-        sampler = None
-        if METRICS_AVAILABLE:
-            sampler = GPUMetricsSampler()
-            sampler.start()
-
-        # Capture stdout/stderr
-        class LogCapture:
-            def __init__(self, original):
-                self.original = original
-
-            def write(self, text):
-                logs.append(text)
-                self.original.write(text)
-
-            def flush(self):
-                self.original.flush()
-
-        old_stdout = sys.stdout
-        old_stderr = sys.stderr
-        sys.stdout = LogCapture(old_stdout)
-        sys.stderr = LogCapture(old_stderr)
-
-        status = "succeeded"
-        exit_code = 0
-
+        workload_id = None
+        start = time.monotonic()
         try:
-            # Show initial progress
-            if self.in_jupyter:
-                self._display_progress(workload_id, name, 0)
-
-            yield workload_id
-
-        except Exception as e:
-            # Failure - set status but don't update yet
-            status = "failed"
-            exit_code = 1
-            error_logs = "".join(logs) + "\n\n" + traceback.format_exc()
-            logs = [error_logs]
-
-            # Display failure
-            runtime = time.time() - start_time
-            self._display_failure(name, runtime, workload_id, str(e))
-
-            raise
-
-        finally:
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-
-            # Stop GPU metrics collection
-            gpu_metrics = None
-            if sampler:
-                samples = sampler.stop()
-                gpu_metrics = sampler.to_json(samples)
-
-            # Update workload with logs and metrics
-            runtime = time.time() - start_time
-            self._update_workload(
-                workload_id,
-                status=status,
-                job_logs="".join(logs),
-                runtime_seconds=int(runtime),
-                exit_code=exit_code,
-                gpu_metrics=gpu_metrics
-            )
-
-            # Display success if not failed
-            if status == "succeeded":
-                self._display_success(name, runtime, workload_id)
-
-                # Optionally display metrics
-                if display_metrics and self.in_jupyter:
-                    self._display_metrics(workload_id)
-
-            # Auto-diagnose if enabled and failed (runs after metrics are sent)
-            elif status == "failed" and auto_diagnose:
+            with super().track(name) as workload_id:
+                if self.in_jupyter:
+                    self._display_progress(workload_id, name, 0)
+                yield workload_id
+        except BaseException as error:
+            if workload_id is not None:
+                if isinstance(error, SystemExit) and error.code in (None, 0):
+                    self._display_success(name, time.monotonic() - start, workload_id)
+                    raise
                 try:
-                    diagnosis = self.diagnose(workload_id, display=False)
-                    self._display_diagnosis(diagnosis)
-                except:
-                    pass
+                    self._display_failure(name, time.monotonic() - start, workload_id, str(error))
+                except Exception:
+                    logging.getLogger(__name__).warning("CrashLens display failed", exc_info=True)
+                if auto_diagnose:
+                    try:
+                        self._display_diagnosis(self.diagnose(workload_id, display=False))
+                    except Exception:
+                        logging.getLogger(__name__).warning("CrashLens diagnosis failed", exc_info=True)
+            raise
+        else:
+            self._display_success(name, time.monotonic() - start, workload_id)
+            if display_metrics and self.in_jupyter:
+                self._display_metrics(workload_id)
 
     def diagnose(self, workload_id: int, display: bool = True) -> Dict[str, Any]:
         """
@@ -338,7 +265,7 @@ class JupyterWorkloadTracker:
         Returns:
             dict with root_cause, recommended_fixes, evidence, etc.
         """
-        response = requests.post(f"{self.api_url}/workloads/{workload_id}/diagnose", headers=self.headers)
+        response = requests.post(f"{self.api_url}/workloads/{workload_id}/diagnose", headers=self.headers, timeout=75)
         response.raise_for_status()
         diagnosis = response.json()
 
@@ -353,7 +280,7 @@ class JupyterWorkloadTracker:
 
         if not self.in_jupyter:
             print(f"Workload ID: {workload['id']}")
-            print(f"Name: {workload['name']}")
+            print(f"Name: {escape(str(workload['name']))}")
             print(f"Status: {workload['status']}")
             print(f"Runtime: {workload.get('runtime_seconds', 0)}s")
             return
@@ -367,7 +294,7 @@ class JupyterWorkloadTracker:
 
         html = f"""
         <div style="border: 2px solid {status_color}; border-radius: 8px; padding: 20px; margin: 10px 0;">
-            <h3 style="color: {status_color}; margin-top: 0;">Workload #{workload['id']}: {workload['name']}</h3>
+            <h3 style="color: {status_color}; margin-top: 0;">Workload #{workload['id']}: {escape(str(workload['name']))}</h3>
 
             <table style="width: 100%; border-collapse: collapse;">
                 <tr>
@@ -466,7 +393,8 @@ if JUPYTER_AVAILABLE:
 
             # Execute cell within tracking context
             with self.tracker.track(name, display_metrics=True, auto_diagnose=True):
-                get_ipython().run_cell(cell)
+                result = self.shell.run_cell(cell)
+                result.raise_error()
 
         @line_magic
         def crashlens_diagnose(self, line):

@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,6 +15,7 @@ import (
 
 	"crashlens/classifier"
 	"crashlens/db"
+	"crashlens/metrics"
 )
 
 type JobResult struct {
@@ -27,6 +27,7 @@ type JobResult struct {
 }
 
 type MetricsSnapshot struct {
+	Source           string    `json:"source"`
 	Timestamp        time.Time `json:"timestamp"`
 	GPUMemoryUsed    float64   `json:"gpu_memory_used_mb"`
 	GPUMemoryTotal   float64   `json:"gpu_memory_total_mb"`
@@ -48,8 +49,27 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	now := time.Now()
 	workload.StartedAt = &now
 	workload.Status = "running"
-	database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload)
+	if err := database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload); err != nil {
+		return nil, err
+	}
 
+	failStart := func(cause error) (*JobResult, error) {
+		finished := time.Now()
+		runtime := finished.Sub(startTime).Seconds()
+		code := 1
+		logs := "Job launch failed: " + cause.Error()
+		failure := classifier.UnknownError
+		workload.Status = "failed"
+		workload.FinishedAt = &finished
+		workload.RuntimeSeconds = &runtime
+		workload.ExitCode = &code
+		workload.JobLogs = &logs
+		workload.FailureType = &failure
+		if err := database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload); err != nil {
+			return nil, fmt.Errorf("%v; save failure: %w", cause, err)
+		}
+		return nil, cause
+	}
 	// Prepare command
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "python3", scriptPath)
@@ -57,11 +77,11 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	// Create pipes for streaming stdout/stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return failStart(err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return nil, err
+		return failStart(err)
 	}
 
 	// Buffer to collect all logs (with mutex for thread safety)
@@ -70,12 +90,12 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return failStart(err)
 	}
 
 	// Start metrics collection in background
 	metricsCtx, cancelMetrics := context.WithCancel(ctx)
-	var allMetrics []MetricsSnapshot
+	allMetrics := []MetricsSnapshot{}
 	var metricsMutex sync.Mutex
 	metricsDone := make(chan struct{})
 	go func() {
@@ -158,7 +178,9 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 		workload.Status = "succeeded"
 	}
 
-	database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload)
+	if err := database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload); err != nil {
+		return nil, err
+	}
 
 	log.Printf("Job %d completed: status=%s, exit_code=%d, runtime=%.2fs",
 		workloadID, workload.Status, result.ExitCode, runtime)
@@ -168,14 +190,20 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 
 // streamOutput reads from a pipe and writes to buffer with optional logging
 func streamOutput(reader io.Reader, buffer *bytes.Buffer, mutex *sync.Mutex, prefix string) {
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		line := scanner.Text()
-		mutex.Lock()
-		buffer.WriteString(line + "\n")
-		mutex.Unlock()
-		// Optionally log to console for debugging
-		// log.Printf("[%s] %s", prefix, line)
+	chunk := make([]byte, 32*1024)
+	for {
+		n, err := reader.Read(chunk)
+		if n > 0 {
+			mutex.Lock()
+			buffer.Write(chunk[:n])
+			mutex.Unlock()
+		}
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("%s log read failed: %v", prefix, err)
+			}
+			return
+		}
 	}
 }
 
@@ -214,62 +242,28 @@ func getJobType(scriptPath string) string {
 	return "default"
 }
 
-// collectGPUMetricsSnapshot collects a single snapshot of GPU metrics
+// Use the same NVIDIA/ROCm collector implementations as platform detection.
 func collectGPUMetricsSnapshot(jobType string, iteration int) MetricsSnapshot {
-	// Try to collect real AMD GPU metrics first
-	if realMetrics := collectRealROCmMetrics(); realMetrics != nil {
-		return *realMetrics
-	}
-
-	// Fallback to simulated metrics
-	return simulateGPUMetrics(jobType, iteration)
+	return snapshotFromCollector(metrics.GetCollector(""), jobType, iteration)
 }
 
-// collectRealROCmMetrics attempts to collect real AMD GPU metrics using rocm-smi
-func collectRealROCmMetrics() *MetricsSnapshot {
-	// Try rocm-smi --showmemuse --showuse
-	cmd := exec.Command("rocm-smi", "--showmemuse", "--showuse", "--showtemp")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil
-	}
-
-	// Parse rocm-smi output
-	lines := strings.Split(string(output), "\n")
-	snapshot := &MetricsSnapshot{
-		Timestamp: time.Now(),
-	}
-
-	// Simple parsing - looking for patterns like:
-	// GPU[0] : Memory Usage: 12345 / 24576 MB
-	// GPU[0] : GPU use: 85%
-	for _, line := range lines {
-		if strings.Contains(line, "Memory Usage") {
-			// Extract memory values
-			fmt.Sscanf(line, "GPU[0] : Memory Usage: %f / %f MB",
-				&snapshot.GPUMemoryUsed, &snapshot.GPUMemoryTotal)
-			if snapshot.GPUMemoryTotal > 0 {
-				snapshot.GPUMemoryPercent = (snapshot.GPUMemoryUsed / snapshot.GPUMemoryTotal) * 100
-			}
-		} else if strings.Contains(line, "GPU use") {
-			fmt.Sscanf(line, "GPU[0] : GPU use: %f%%", &snapshot.GPUUtilization)
-		} else if strings.Contains(line, "Temperature") {
-			fmt.Sscanf(line, "GPU[0] : Temperature: %f C", &snapshot.Temperature)
+func snapshotFromCollector(collector metrics.MetricCollector, jobType string, iteration int) MetricsSnapshot {
+	if collector.Name() != "Simulated" {
+		sample, err := collector.Collect()
+		if err == nil {
+			return MetricsSnapshot{Timestamp: sample.Timestamp, GPUMemoryUsed: sample.GPUMemoryUsedMB,
+				GPUMemoryTotal: sample.GPUMemoryTotalMB, GPUMemoryPercent: sample.GPUMemoryPercent,
+				GPUUtilization: sample.GPUUtilizationPercent, Temperature: float64(sample.TemperatureCelsius), Source: collector.Name()}
 		}
 	}
-
-	// If we got valid data, return it
-	if snapshot.GPUMemoryTotal > 0 {
-		return snapshot
-	}
-
-	return nil
+	return simulateGPUMetrics(jobType, iteration)
 }
 
 // simulateGPUMetrics generates realistic GPU metrics for demo purposes
 func simulateGPUMetrics(jobType string, iteration int) MetricsSnapshot {
 	snapshot := MetricsSnapshot{
 		Timestamp:      time.Now(),
+		Source:         "Simulated",
 		GPUMemoryTotal: 24576, // 24GB AMD GPU
 		Temperature:    65.0 + float64(iteration)*2.0,
 	}

@@ -33,6 +33,9 @@ export interface Stats {
 }
 
 export interface DiagnosisReport {
+  source: "ai" | "rules";
+  confidence_basis?: string;
+  prevention?: string;
   failure_type: string;
   confidence: number;
   root_cause: string;
@@ -77,8 +80,8 @@ export const api = {
     return res.json();
   },
 
-  async diagnoseWorkload(id: string): Promise<DiagnosisReport> {
-    const res = await fetch(`${API_URL}/workloads/${id}/diagnose`, {
+  async diagnoseWorkload(id: string, refresh = false): Promise<DiagnosisReport> {
+    const res = await fetch(`${API_URL}/workloads/${id}/diagnose${refresh ? "?refresh=true" : ""}`, {
       method: 'POST',
       headers: getHeaders(),
     });

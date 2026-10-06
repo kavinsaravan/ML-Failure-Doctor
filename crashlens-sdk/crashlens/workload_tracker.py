@@ -6,6 +6,8 @@ import requests
 import time
 import traceback
 import sys
+import logging
+from functools import wraps
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 
@@ -55,7 +57,7 @@ class WorkloadTracker:
                 "type": workload_type,
                 "status": "running"
             },
-            headers=self.headers
+            headers=self.headers, timeout=15
         )
         response.raise_for_status()
         return response.json()["id"]
@@ -72,7 +74,7 @@ class WorkloadTracker:
     ):
         """Update workload status"""
         data = {"status": status}
-        if logs:
+        if logs is not None:
             data["job_logs"] = logs
         if runtime_seconds is not None:
             data["runtime_seconds"] = runtime_seconds
@@ -80,15 +82,17 @@ class WorkloadTracker:
             data["exit_code"] = exit_code
         if failure_type:
             data["failure_type"] = failure_type
-        if gpu_metrics:
+        if gpu_metrics is not None:
             data["gpu_metrics"] = gpu_metrics
 
-        requests.put(
+        response = requests.put(
             f"{self.api_url}/workloads/{workload_id}",
             json=data,
-            headers=self.headers
+            headers=self.headers, timeout=15
         )
     
+        response.raise_for_status()
+
     @contextmanager
     def track(self, name: str):
         """
@@ -99,14 +103,18 @@ class WorkloadTracker:
                 model.train()
         """
         workload_id = self._create_workload(name)
-        start_time = time.time()
+        start_time = time.monotonic()
         logs = []
 
         # Start GPU metrics collection
         sampler = None
         if METRICS_AVAILABLE:
-            sampler = GPUMetricsSampler()
-            sampler.start()
+            try:
+                sampler = GPUMetricsSampler()
+                sampler.start()
+            except Exception:
+                sampler = None
+                logging.getLogger(__name__).warning("GPU sampling unavailable", exc_info=True)
 
         # Capture stdout/stderr
         class LogCapture:
@@ -115,10 +123,13 @@ class WorkloadTracker:
 
             def write(self, text):
                 logs.append(text)
-                self.original.write(text)
+                return self.original.write(text)
 
             def flush(self):
                 self.original.flush()
+
+            def __getattr__(self, name):
+                return getattr(self.original, name)
 
         old_stdout = sys.stdout
         old_stderr = sys.stderr
@@ -131,10 +142,10 @@ class WorkloadTracker:
         try:
             yield workload_id
 
-        except Exception as e:
+        except BaseException as e:
             # Failure - set status but don't update yet
-            status = "failed"
-            exit_code = 1
+            status = "succeeded" if isinstance(e, SystemExit) and e.code in (None, 0) else "failed"
+            exit_code = 0 if status == "succeeded" else 1
             error_logs = "".join(logs) + "\n\n" + traceback.format_exc()
             logs = [error_logs]
             raise
@@ -146,20 +157,25 @@ class WorkloadTracker:
             # Stop GPU metrics collection
             gpu_metrics = None
             if sampler:
-                samples = sampler.stop()
-                gpu_metrics = sampler.to_json(samples)
+                try:
+                    samples = sampler.stop()
+                    gpu_metrics = sampler.to_json(samples)
+                except Exception:
+                    logging.getLogger(__name__).warning("GPU sampling cleanup failed", exc_info=True)
 
             # Update workload with logs and metrics
-            runtime = time.time() - start_time
-            self._update_workload(
-                workload_id,
-                status=status,
-                logs="".join(logs),
-                runtime_seconds=runtime,
-                exit_code=exit_code,
-                gpu_metrics=gpu_metrics
-            )
-    
+            runtime = time.monotonic() - start_time
+            try:
+                self._update_workload(
+                    workload_id, status=status, logs="".join(logs),
+                    runtime_seconds=runtime, exit_code=exit_code, gpu_metrics=gpu_metrics
+                )
+            except Exception:
+                # Telemetry must not replace the training exception or fail completed training.
+                logging.getLogger(__name__).warning(
+                    "CrashLens could not report workload %s", workload_id, exc_info=True
+                )
+
     def track_function(self, name: str):
         """
         Decorator for tracking a function as a workload
@@ -170,6 +186,7 @@ class WorkloadTracker:
                 model.fit(X, y)
         """
         def decorator(func):
+            @wraps(func)
             def wrapper(*args, **kwargs):
                 with self.track(name):
                     return func(*args, **kwargs)
@@ -185,7 +202,7 @@ class WorkloadTracker:
         """
         response = requests.post(
             f"{self.api_url}/workloads/{workload_id}/diagnose",
-            headers=self.headers
+            headers=self.headers, timeout=75
         )
         response.raise_for_status()
         return response.json()
@@ -195,10 +212,10 @@ class WorkloadTracker:
 _global_tracker: Optional[WorkloadTracker] = None
 
 
-def init(api_url: str):
+def init(api_url: str, api_key: Optional[str] = None):
     """Initialize global tracker"""
     global _global_tracker
-    _global_tracker = WorkloadTracker(api_url)
+    _global_tracker = WorkloadTracker(api_url, api_key)
     return _global_tracker
 
 

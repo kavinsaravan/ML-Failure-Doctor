@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, Workload, Stats } from '@/lib/api';
 import {
@@ -20,13 +20,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [runningJob, setRunningJob] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 3000); // Refresh every 3s
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [workloadsData, statsData] = await Promise.all([
         api.getWorkloads(),
@@ -39,7 +33,13 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const initial = setTimeout(() => void loadData(), 0);
+    const interval = setInterval(loadData, 3000); // Refresh every 3s
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [loadData]);
 
   const handleRunJob = async (template: string) => {
     setRunningJob(template);
@@ -69,7 +69,7 @@ export default function Dashboard() {
   };
 
   const formatDuration = (seconds?: number) => {
-    if (!seconds) return '—';
+    if (seconds == null) return '—';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}m ${secs}s`;
@@ -217,7 +217,7 @@ export default function Dashboard() {
               { template: 'dependency_error', label: 'Dependency Error', color: 'yellow' },
               { template: 'data_path_error', label: 'Data Path Error', color: 'purple' },
               { template: 'timeout', label: 'Timeout', color: 'blue' },
-            ].map(({ template, label, color }) => (
+            ].map(({ template, label }) => (
               <button
                 key={template}
                 onClick={() => handleRunJob(template)}

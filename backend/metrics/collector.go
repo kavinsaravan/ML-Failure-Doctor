@@ -1,8 +1,10 @@
 package metrics
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"os/exec"
 	"strconv"
@@ -12,12 +14,13 @@ import (
 
 // GPUMetric represents a single point-in-time GPU measurement
 type GPUMetric struct {
-	Timestamp          time.Time `json:"timestamp"`
-	GPUMemoryUsedMB    float64   `json:"gpu_memory_used_mb"`
-	GPUMemoryTotalMB   float64   `json:"gpu_memory_total_mb"`
-	GPUMemoryPercent   float64   `json:"gpu_memory_percent"`
-	GPUUtilizationPercent float64 `json:"gpu_utilization_percent"`
-	TemperatureCelsius int       `json:"temperature_celsius"`
+	Timestamp             time.Time `json:"timestamp"`
+	GPUMemoryUsedMB       float64   `json:"gpu_memory_used_mb"`
+	GPUMemoryTotalMB      float64   `json:"gpu_memory_total_mb"`
+	GPUMemoryPercent      float64   `json:"gpu_memory_percent"`
+	GPUUtilizationPercent float64   `json:"gpu_utilization_percent"`
+	Source                string    `json:"source"`
+	TemperatureCelsius    int       `json:"temperature_celsius"`
 }
 
 // MetricCollector is the interface for collecting GPU metrics
@@ -44,8 +47,7 @@ func NewROCmSMICollector(deviceID int) *ROCmSMICollector {
 
 func (c *ROCmSMICollector) IsAvailable() bool {
 	// Check if rocm-smi is available
-	cmd := exec.Command("rocm-smi", "--version")
-	err := cmd.Run()
+	_, err := smiOutput("rocm-smi", "--version")
 	return err == nil
 }
 
@@ -54,63 +56,62 @@ func (c *ROCmSMICollector) Name() string {
 }
 
 func (c *ROCmSMICollector) Collect() (*GPUMetric, error) {
-	// Run rocm-smi to get memory info
-	// Example: rocm-smi --showmeminfo vram --json
-	memCmd := exec.Command("rocm-smi", "--showmeminfo", "vram", "--json")
-	memOutput, err := memCmd.Output()
+	output, err := smiOutput("rocm-smi", "--showmeminfo", "vram", "--showuse", "--showtemp", "--json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to run rocm-smi for memory: %w", err)
+		return nil, fmt.Errorf("rocm-smi: %w", err)
 	}
+	return parseROCmJSON(output, c.deviceID)
+}
 
-	// Run rocm-smi to get utilization
-	// Example: rocm-smi --showuse --json
-	utilCmd := exec.Command("rocm-smi", "--showuse", "--json")
-	utilOutput, err := utilCmd.Output()
+// Keys follow ROCm/rocm_smi_lib python_smi_tools/rocm_smi.py.
+func parseROCmJSON(output []byte, deviceID int) (*GPUMetric, error) {
+	var cards map[string]map[string]interface{}
+	if err := json.Unmarshal(output, &cards); err != nil {
+		return nil, err
+	}
+	card, ok := cards[fmt.Sprintf("card%d", deviceID)]
+	if !ok {
+		return nil, fmt.Errorf("GPU %d missing from rocm-smi output", deviceID)
+	}
+	number := func(key string) (float64, error) {
+		value, ok := card[key]
+		if !ok {
+			return 0, fmt.Errorf("missing %s", key)
+		}
+		n, err := strconv.ParseFloat(fmt.Sprint(value), 64)
+		if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+			return 0, fmt.Errorf("invalid %s", key)
+		}
+		return n, nil
+	}
+	total, err := number("VRAM Total Memory (B)")
+	if err != nil || total <= 0 {
+		return nil, fmt.Errorf("invalid VRAM total")
+	}
+	used, err := number("VRAM Total Used Memory (B)")
+	if err != nil || used < 0 || used > total {
+		return nil, fmt.Errorf("invalid VRAM used")
+	}
+	util, err := number("GPU use (%)")
+	if err != nil || util < 0 || util > 100 {
+		return nil, fmt.Errorf("invalid GPU utilization")
+	}
+	temp, err := number("Temperature (Sensor edge) (C)")
 	if err != nil {
-		return nil, fmt.Errorf("failed to run rocm-smi for utilization: %w", err)
+		temp, err = number("Temperature (Sensor junction) (C)")
 	}
-
-	// Run rocm-smi to get temperature
-	// Example: rocm-smi --showtemp --json
-	tempCmd := exec.Command("rocm-smi", "--showtemp", "--json")
-	tempOutput, err := tempCmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to run rocm-smi for temperature: %w", err)
+		return nil, err
 	}
+	return &GPUMetric{Timestamp: time.Now().UTC(), GPUMemoryUsedMB: used / (1024 * 1024),
+		GPUMemoryTotalMB: total / (1024 * 1024), GPUMemoryPercent: used / total * 100,
+		GPUUtilizationPercent: util, TemperatureCelsius: int(temp), Source: "ROCmSMI"}, nil
+}
 
-	// Parse the JSON outputs (simplified - actual parsing would be more complex)
-	metric := &GPUMetric{
-		Timestamp: time.Now(),
-	}
-
-	// Parse memory info
-	var memData map[string]interface{}
-	if err := json.Unmarshal(memOutput, &memData); err == nil {
-		// Extract memory values from JSON structure
-		// Actual implementation would navigate the JSON structure
-		// This is a simplified version
-		metric.GPUMemoryUsedMB = 0    // Extract from memData
-		metric.GPUMemoryTotalMB = 0   // Extract from memData
-	}
-
-	// Parse utilization
-	var utilData map[string]interface{}
-	if err := json.Unmarshal(utilOutput, &utilData); err == nil {
-		metric.GPUUtilizationPercent = 0 // Extract from utilData
-	}
-
-	// Parse temperature
-	var tempData map[string]interface{}
-	if err := json.Unmarshal(tempOutput, &tempData); err == nil {
-		metric.TemperatureCelsius = 0 // Extract from tempData
-	}
-
-	// Calculate percentage if we have the values
-	if metric.GPUMemoryTotalMB > 0 {
-		metric.GPUMemoryPercent = (metric.GPUMemoryUsedMB / metric.GPUMemoryTotalMB) * 100
-	}
-
-	return metric, nil
+func smiOutput(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
 }
 
 // NVIDIASMICollector collects real metrics from NVIDIA GPUs using nvidia-smi
@@ -125,8 +126,7 @@ func NewNVIDIASMICollector(deviceID int) *NVIDIASMICollector {
 
 func (c *NVIDIASMICollector) IsAvailable() bool {
 	// Check if nvidia-smi is available
-	cmd := exec.Command("nvidia-smi", "--version")
-	err := cmd.Run()
+	_, err := smiOutput("nvidia-smi", "--version")
 	return err == nil
 }
 
@@ -137,12 +137,11 @@ func (c *NVIDIASMICollector) Name() string {
 func (c *NVIDIASMICollector) Collect() (*GPUMetric, error) {
 	// Use nvidia-smi with CSV format for easy parsing
 	// Query: memory.used, memory.total, utilization.gpu, temperature.gpu
-	cmd := exec.Command("nvidia-smi",
+	output, err := smiOutput("nvidia-smi",
 		"--query-gpu=memory.used,memory.total,utilization.gpu,temperature.gpu",
 		"--format=csv,noheader,nounits",
 		fmt.Sprintf("--id=%d", c.deviceID))
 
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run nvidia-smi: %w", err)
 	}
@@ -183,6 +182,7 @@ func (c *NVIDIASMICollector) Collect() (*GPUMetric, error) {
 
 	return &GPUMetric{
 		Timestamp:             time.Now(),
+		Source:                c.Name(),
 		GPUMemoryUsedMB:       memUsed,
 		GPUMemoryTotalMB:      memTotal,
 		GPUMemoryPercent:      memPercent,
@@ -265,6 +265,7 @@ func (c *SimulatedCollector) Collect() (*GPUMetric, error) {
 
 	return &GPUMetric{
 		Timestamp:             time.Now(),
+		Source:                c.Name(),
 		GPUMemoryUsedMB:       memoryUsed,
 		GPUMemoryTotalMB:      c.totalMemoryMB,
 		GPUMemoryPercent:      memoryPercent,

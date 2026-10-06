@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![NVIDIA CUDA](https://img.shields.io/badge/NVIDIA-CUDA-76B900.svg)
 ![AMD ROCm](https://img.shields.io/badge/AMD-ROCm-red.svg)
-![Go](https://img.shields.io/badge/Go-1.22-00ADD8.svg)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)
 
@@ -20,7 +20,7 @@
 -  **Universal GPU Support** - Works with NVIDIA (nvidia-smi), AMD (rocm-smi), and cloud platforms
 -  **Real-time Metrics** - Live GPU memory, utilization, and temperature monitoring
 -  **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
--  **Production-Ready** - Fully containerized with Docker
+-  **Containerized Prototype** - Docker setup for reproducible demos
 
 ---
 
@@ -35,7 +35,7 @@
   - Prevention strategies
 - **Universal GPU Support**: Auto-detects NVIDIA (nvidia-smi) or AMD (rocm-smi) GPUs
 - **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring
-  - *Note: Demo jobs use simulated metrics. Workloads tracked with the SDK record live GPU memory (NVIDIA and ROCm), plus utilization and temperature on NVIDIA when `nvidia-ml-py` is installed.*
+  - *Note: Demo jobs use real NVIDIA/ROCm metrics when available, otherwise explicitly tagged simulated metrics. Workloads tracked with the SDK record live GPU memory (NVIDIA and ROCm), plus utilization and temperature on NVIDIA when `nvidia-ml-py` is installed.*
 - **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
 
 ###  Jupyter Notebook Integration
@@ -157,12 +157,12 @@ ML-Failure-Doctor/
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | **Frontend** | Next.js 16, React, TypeScript, Tailwind CSS | Modern, responsive dashboard |
-| **Backend** | Go 1.22, Gorilla Mux | High-performance REST API |
+| **Backend** | Go 1.26, Gorilla Mux | High-performance REST API |
 | **Database** | SQLite | Lightweight, embedded persistence |
 | **AI Model** | Gemma via Fireworks AI | Intelligent failure diagnosis |
 | **GPU Platform** | **NVIDIA CUDA / AMD ROCm** | Universal GPU metrics collection |
 | **Visualization** | Recharts | GPU metrics and performance charts |
-| **Containerization** | Docker, Docker Compose | Production-ready deployment |
+| **Containerization** | Docker, Docker Compose | Containerized deployment |
 
 ---
 
@@ -378,3 +378,33 @@ PORT=8080  # Optional, defaults to 8080
 ```
 
 ---
+
+## Reliability and validation
+
+CrashLens is a prototype. Diagnosis reports identify `source` as `ai` or `rules`,
+and both sources are persisted for dashboard reloads and MCP queries. The
+`confidence` value is a heuristic log-match score, not calibrated model accuracy.
+`safe_to_retry` means retrying without changes; rule-based reports require applying
+the recommended fixes first. Updating diagnosis inputs invalidates the cached report.
+
+SDK tracking records Python exceptions, notebook execution and syntax errors,
+interruptions, and nonzero `SystemExit`. It cannot report a process killed with
+`SIGKILL`, a machine failure, or a kernel crash. Requests have timeouts; reporting
+failures are logged without replacing training errors. Failure classification and
+lifecycle timestamps are derived by the backend. Wasted GPU time defaults to a
+single-GPU runtime estimate; it is not a billing measurement.
+
+The backend collector parses NVIDIA CSV and ROCm SMI JSON; simulated fallback
+samples are tagged with `source: "Simulated"`. Real hardware still needs validation
+on supported NVIDIA/AMD hosts. SDK telemetry measures device 0.
+
+Run regression checks:
+
+```bash
+(cd backend && go test -race ./...)
+(cd mcp-server && npm test)
+(cd frontend && npm run lint && npm run build)
+# In a virtual environment with the SDK's notebook dependencies installed:
+pip install -e './crashlens-sdk[jupyter]'
+PYTHONPATH=crashlens-sdk python -m unittest discover -s crashlens-sdk/tests -v
+```

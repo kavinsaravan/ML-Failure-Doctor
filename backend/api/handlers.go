@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"crashlens/db"
@@ -101,6 +102,22 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reports are invalidated whenever their input changes.
+	if (updates.Status != "" && updates.Status != existing.Status) || updates.JobLogs != nil || updates.GPUMetrics != nil || updates.FailureType != nil || updates.RuntimeSeconds != nil {
+		existing.FailureReport = nil
+		if updates.FailureType == nil {
+			existing.FailureType = nil
+		}
+	}
+	if updates.StartedAt != nil {
+		existing.StartedAt = updates.StartedAt
+	}
+	if updates.FinishedAt != nil {
+		existing.FinishedAt = updates.FinishedAt
+	}
+	if updates.CheckpointState != nil {
+		existing.CheckpointState = updates.CheckpointState
+	}
 	// Merge updates with existing data (only update non-nil fields)
 	if updates.Status != "" {
 		existing.Status = updates.Status
@@ -109,7 +126,14 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		existing.FailureType = updates.FailureType
 	}
 	if updates.RuntimeSeconds != nil {
+		if *updates.RuntimeSeconds < 0 {
+			http.Error(w, "runtime_seconds cannot be negative", http.StatusBadRequest)
+			return
+		}
 		existing.RuntimeSeconds = updates.RuntimeSeconds
+		if updates.WastedGPUSeconds == nil {
+			existing.WastedGPUSeconds = nil
+		}
 	}
 	if updates.ExitCode != nil {
 		existing.ExitCode = updates.ExitCode
@@ -204,7 +228,11 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run job asynchronously
-	go runner.RunPythonJob(scriptPath, int(id), s.DB)
+	go func() {
+		if _, err := runner.RunPythonJob(scriptPath, int(id), s.DB); err != nil {
+			log.Printf("Job %d failed: %v", id, err)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -282,9 +310,13 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if workload.Status != "failed" {
+		http.Error(w, "Only failed workloads can be diagnosed", http.StatusConflict)
+		return
+	}
 	// If AI diagnosis already exists, return cached result (idempotent)
 	// Only cache AI results - rule-based fallback may improve with code changes
-	if workload.FailureReport != nil && *workload.FailureReport != "" {
+	if r.URL.Query().Get("refresh") != "true" && workload.FailureReport != nil && *workload.FailureReport != "" {
 		var cachedReport diagnosis.Report
 		if err := json.Unmarshal([]byte(*workload.FailureReport), &cachedReport); err == nil {
 			if cachedReport.Source == "ai" {
@@ -298,12 +330,24 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 	// Run diagnosis (may call AI model which costs money)
 	report := diagnosis.RunDiagnosis(workload, s.FWClient)
 
-	// Only store AI results - rule-based fallback should be re-run if improved
-	if report.Source == "ai" {
-		reportJSON, _ := json.Marshal(report)
-		reportStr := string(reportJSON)
-		workload.FailureReport = &reportStr
-		s.DB.UpdateWorkload(id, workload)
+	// Persist both sources so reloads and MCP queries retain fallback reports.
+	reportJSON, err := json.Marshal(report)
+	if err != nil {
+		http.Error(w, "Failed to encode diagnosis", http.StatusInternalServerError)
+		return
+	}
+	// Update only the report and reject results if inputs changed during the AI call.
+	result, err := s.DB.Exec(`UPDATE workloads SET failure_report = ? WHERE id = ?
+  AND status = 'failed' AND job_logs IS ? AND gpu_metrics IS ? AND failure_type IS ? AND runtime_seconds IS ?`,
+		string(reportJSON), id, workload.JobLogs, workload.GPUMetrics, workload.FailureType, workload.RuntimeSeconds)
+	if err != nil {
+		http.Error(w, "Failed to save diagnosis", http.StatusInternalServerError)
+		return
+	}
+	count, err := result.RowsAffected()
+	if err != nil || count == 0 {
+		http.Error(w, "Workload changed during diagnosis; retry", http.StatusConflict)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

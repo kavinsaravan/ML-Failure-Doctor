@@ -10,14 +10,16 @@ import (
 )
 
 type Report struct {
-	FailureType    string    `json:"failure_type"`
-	Confidence     float64   `json:"confidence"`
-	RootCause      string    `json:"root_cause"`
-	Evidence       []string  `json:"evidence"`
-	RecommendedFix string    `json:"recommended_fix"`
-	SafeToRetry    bool      `json:"safe_to_retry"`
-	DiagnosedAt    time.Time `json:"diagnosed_at"`
-	Source         string    `json:"source"` // "ai" or "rules"
+	FailureType     string    `json:"failure_type"`
+	Confidence      float64   `json:"confidence"`
+	RootCause       string    `json:"root_cause"`
+	Evidence        []string  `json:"evidence"`
+	RecommendedFix  string    `json:"recommended_fix"`
+	SafeToRetry     bool      `json:"safe_to_retry"`
+	DiagnosedAt     time.Time `json:"diagnosed_at"`
+	ConfidenceBasis string    `json:"confidence_basis"`
+	Prevention      string    `json:"prevention,omitempty"`
+	Source          string    `json:"source"` // "ai" or "rules"
 }
 
 func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
@@ -25,25 +27,18 @@ func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
 	var classResult classifier.ClassificationResult
 	var failureType string
 
-	if workload.FailureType != nil {
-		failureType = *workload.FailureType
-		classResult = classifier.ClassificationResult{
-			FailureType: failureType,
-			Confidence:  0.95, // High confidence if already classified
-		}
-	} else if workload.JobLogs != nil {
-		gpuMetrics := ""
-		if workload.GPUMetrics != nil {
-			gpuMetrics = *workload.GPUMetrics
-		}
-		classResult = classifier.ClassifyWithConfidence(*workload.JobLogs, gpuMetrics)
-		failureType = classResult.FailureType
-	} else {
-		classResult = classifier.ClassificationResult{
-			FailureType: classifier.UnknownError,
-			Confidence:  0.50,
-		}
-		failureType = classifier.UnknownError
+	// Confidence describes a heuristic log match, not measured AI accuracy.
+	logs, gpuMetrics := "", ""
+	if workload.JobLogs != nil {
+		logs = *workload.JobLogs
+	}
+	if workload.GPUMetrics != nil {
+		gpuMetrics = *workload.GPUMetrics
+	}
+	classResult = classifier.ClassifyWithConfidence(logs, gpuMetrics)
+	failureType = classResult.FailureType
+	if failureType == classifier.UnknownError && workload.FailureType != nil {
+		failureType = *workload.FailureType // Preserve externally supplied labels without inflating confidence.
 	}
 
 	// Extract evidence from logs
@@ -107,14 +102,16 @@ func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType strin
 
 	// Convert DiagnosisResult to Report format
 	report := Report{
-		FailureType:    failureType,
-		Confidence:     confidence,
-		RootCause:      result.RootCause,
-		Evidence:       result.Evidence,
-		RecommendedFix: formatRecommendedFixes(result.RecommendedFixes),
-		SafeToRetry:    result.SafeToRetry,
-		DiagnosedAt:    time.Now(),
-		Source:         "ai",
+		FailureType:     failureType,
+		Confidence:      confidence,
+		RootCause:       result.RootCause,
+		Evidence:        result.Evidence,
+		RecommendedFix:  formatRecommendedFixes(result.RecommendedFixes),
+		SafeToRetry:     result.SafeToRetry,
+		DiagnosedAt:     time.Now(),
+		Source:          "ai",
+		ConfidenceBasis: "heuristic_log_match",
+		Prevention:      result.Prevention,
 	}
 
 	return &report
@@ -130,11 +127,12 @@ func formatRecommendedFixes(fixes []string) string {
 
 func ruleBasedDiagnosis(failureType string, evidence []string, confidence float64) Report {
 	report := Report{
-		FailureType: failureType,
-		Confidence:  confidence,
-		Evidence:    evidence,
-		DiagnosedAt: time.Now(),
-		Source:      "rules",
+		FailureType:     failureType,
+		Confidence:      confidence,
+		Evidence:        evidence,
+		DiagnosedAt:     time.Now(),
+		Source:          "rules",
+		ConfidenceBasis: "heuristic_log_match",
 	}
 
 	switch failureType {
@@ -154,7 +152,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 2. Check if checkpoint was properly saved in previous run
 3. Ensure checkpoint directory has correct permissions
 4. If starting fresh, remove checkpoint resume flag from config`
-		report.SafeToRetry = true
+		report.SafeToRetry = false
 
 	case classifier.DependencyError:
 		report.RootCause = "Python dependency or import error - Required packages are missing or incompatible"
@@ -164,7 +162,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 4. For AMD: Install ROCm-compatible PyTorch with ROCm index URL
 5. Check for conflicting package versions
 6. Use 'pip list' to verify installed packages`
-		report.SafeToRetry = true
+		report.SafeToRetry = false
 
 	case classifier.DataPathError:
 		report.RootCause = "Data file or path not found - Training data is inaccessible"
@@ -173,7 +171,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 3. Ensure data directory has correct permissions
 4. Verify S3 bucket or remote storage credentials if applicable
 5. Check for typos in file paths`
-		report.SafeToRetry = true
+		report.SafeToRetry = false
 
 	case classifier.Timeout:
 		report.RootCause = "Job timeout - The workload exceeded the maximum allowed runtime"
@@ -183,7 +181,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 4. Profile code to identify bottlenecks
 5. Consider using faster GPU instances (A100, H100, MI250X)
 6. Check for data loading bottlenecks`
-		report.SafeToRetry = true
+		report.SafeToRetry = false
 
 	case classifier.ROCmError:
 		report.RootCause = "AMD ROCm runtime error - HIP/ROCm encountered a GPU-related error"
@@ -193,7 +191,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 4. Verify GPU is properly detected: 'rocm-smi --showid'
 5. Check for kernel/driver conflicts
 6. Review AMD GPU compatibility matrix`
-		report.SafeToRetry = true
+		report.SafeToRetry = false
 
 	case classifier.CUDAError:
 		report.RootCause = "NVIDIA CUDA runtime error - CUDA/cuDNN encountered a GPU-related error"
@@ -203,7 +201,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 4. Verify GPU is properly detected: 'nvidia-smi -L'
 5. Check cuDNN library compatibility
 6. Review NVIDIA GPU compute capability requirements`
-		report.SafeToRetry = true
+		report.SafeToRetry = false
 
 	case classifier.GPUDriverError:
 		report.RootCause = "GPU driver version mismatch or driver not available"
@@ -212,7 +210,7 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 3. Check driver compatibility with framework version
 4. Restart system after driver updates
 5. Verify GPU is accessible: 'nvidia-smi' or 'rocm-smi'`
-		report.SafeToRetry = true
+		report.SafeToRetry = false
 
 	default:
 		report.RootCause = "Unknown error - Unable to automatically classify the failure"
