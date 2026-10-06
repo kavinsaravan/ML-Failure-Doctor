@@ -175,8 +175,8 @@ ML-Failure-Doctor/
 - **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
 
 #### Option B: Local Development
-- **Go** 1.22+ ([Download](https://go.dev/dl/))
-- **Node.js** 18+ ([Download](https://nodejs.org/))
+- **Go** 1.26+ ([Download](https://go.dev/dl/))
+- **Node.js** 20.9+ ([Download](https://nodejs.org/))
 - **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
 - **AMD ROCm** (optional, for real GPU metrics on AMD hardware)
 
@@ -192,14 +192,15 @@ git clone https://github.com/kavinsaravan/ML-Failure-Doctor.git
 cd ML-Failure-Doctor
 
 # 2. Create environment file with your Fireworks AI API key
-echo "FIREWORKS_API_KEY=your_api_key_here" > .env
+cp .env.example .env
+# Optional: set FIREWORKS_API_KEY and FIREWORKS_MODEL in .env for AI diagnosis
 
 # 3. Start all services (backend, frontend, database)
-docker-compose up -d
+docker compose up --build -d
 
 # 4. Wait for services to start (about 30 seconds)
 # Check logs to verify everything is running:
-docker-compose logs -f
+docker compose logs -f
 
 # 5. Access the application
 open http://localhost:3000
@@ -211,14 +212,25 @@ open http://localhost:3000
 -  **Health Check**: http://localhost:8080/health
 -  **Database**: SQLite (auto-created in Docker volume)
 
+Demo scripts are packaged in the backend image. SQLite is stored in the named
+`crashlens-data` volume, which survives container recreation and `docker compose down`.
+`docker compose down -v` deletes the stored workloads.
+
+`NEXT_PUBLIC_API_URL` must be reachable from the browser. For a remote host, set it
+to that host's backend URL in `.env` and rebuild with `docker compose up --build -d`.
+The default is `http://localhost:8080`.
+
+The optional MCP service uses stdio and is launched by an MCP client, rather than
+started with the dashboard. See [Docker MCP setup](./mcp-server/README.md#docker).
+
 **To Stop:**
 ```bash
-docker-compose down
+docker compose down
 ```
 
 **To Restart:**
 ```bash
-docker-compose restart
+docker compose restart
 ```
 
 ---

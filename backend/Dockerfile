@@ -1,37 +1,18 @@
-# Build stage
-FROM golang:1.22-alpine AS builder
-
-# Install build dependencies
+# Build from the repository root: docker build -f backend/Dockerfile .
+FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache gcc musl-dev sqlite-dev
-
-WORKDIR /app
-
-# Copy go mod files
-COPY go.mod go.sum ./
+WORKDIR /build
+COPY backend/go.mod backend/go.sum ./
 RUN go mod download
+COPY backend/ ./
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o /crashlens .
 
-# Copy all source code
-COPY . .
-
-# Build the application
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o crashlens .
-
-# Runtime stage
-FROM alpine:latest
-
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates sqlite-libs
-
-WORKDIR /root
-
-# Copy binary from builder
-COPY --from=builder /app/crashlens .
-
-# Create jobs directory for test workloads
-RUN mkdir -p ./jobs
-
-# Expose port
+FROM alpine:3.23
+RUN apk add --no-cache ca-certificates sqlite-libs python3 \
+    && mkdir -p /app/data
+WORKDIR /app
+COPY --from=builder /crashlens ./crashlens
+COPY jobs/ ./jobs/
+ENV PORT=8080 DATABASE_PATH=/app/data/crashlens.db
 EXPOSE 8080
-
-# Run the application
 CMD ["./crashlens"]

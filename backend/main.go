@@ -29,7 +29,11 @@ func main() {
 	}
 
 	// Initialize database
-	database, err := db.New("./crashlens.db")
+	dbPath := os.Getenv("DATABASE_PATH")
+	if dbPath == "" {
+		dbPath = "./crashlens.db"
+	}
+	database, err := db.New(dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}

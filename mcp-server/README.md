@@ -182,3 +182,32 @@ The server never crashes on individual tool failures and continues serving subse
 - JSON-encoded fields (gpu_metrics, failure_report, checkpoint_state) are parsed safely
 - GPU metrics are downsampled to 300 points if the response contains more
 - Workload logs can be tailed to limit response size (default: last 200 lines)
+
+## Docker
+
+From the repository root, start the API and build the optional MCP image:
+
+```bash
+docker compose up --build -d
+docker compose --profile mcp build mcp-server
+```
+
+Configure your MCP client to launch the stdio container (replace the project path):
+
+```json
+{
+  "mcpServers": {
+    "crashlens": {
+      "command": "docker",
+      "args": [
+        "compose", "--project-directory", "/absolute/path/to/ML-Failure-Doctor",
+        "run", "--rm", "--no-deps", "-T", "mcp-server"
+      ]
+    }
+  }
+}
+```
+
+The backend must already be running. Compose supplies `CRASHLENS_URL` using the
+internal service hostname and passes `CRASHLENS_API_KEY` from `.env`. Do not use a
+TTY: stdout is reserved for the MCP protocol.

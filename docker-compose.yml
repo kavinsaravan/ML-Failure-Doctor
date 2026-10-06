@@ -1,66 +1,55 @@
-version: '3.8'
-
 services:
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: crashlens-backend
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8080:8080"
     environment:
-      - PORT=8080
-      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY}
+      PORT: "8080"
+      DATABASE_PATH: /app/data/crashlens.db
+      FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:-}
+      FIREWORKS_MODEL: ${FIREWORKS_MODEL:-}
+      CRASHLENS_API_KEY: ${CRASHLENS_API_KEY:-}
     volumes:
       - crashlens-data:/app/data
-      - ./jobs:/jobs
     restart: unless-stopped
-    networks:
-      - crashlens-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+      start_period: 10s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       target: runner
-    container_name: crashlens-frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080
-      - NODE_ENV=production
+      NODE_ENV: production
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
-    networks:
-      - crashlens-network
 
+  # Stdio MCP clients launch this on demand with `docker compose run --rm -T`.
   mcp-server:
+    profiles: ["mcp"]
     build:
       context: ./mcp-server
       dockerfile: Dockerfile
-    container_name: crashlens-mcp
     environment:
-      - NODE_ENV=production
-      - BACKEND_URL=http://backend:8080
+      CRASHLENS_URL: http://backend:8080
+      CRASHLENS_API_KEY: ${CRASHLENS_API_KEY:-}
+    stdin_open: true
     depends_on:
       backend:
         condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - crashlens-network
 
 volumes:
   crashlens-data:
-    driver: local
-
-networks:
-  crashlens-network:
-    driver: bridge

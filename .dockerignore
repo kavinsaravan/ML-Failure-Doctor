@@ -1,0 +1,13 @@
+**/node_modules
+**/.next
+**/.git
+**/.env
+**/.env.*
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/*.log
+**/__pycache__
+**/.DS_Store
+backend/crashlens
+backend/data
