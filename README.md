@@ -403,8 +403,32 @@ Run regression checks:
 ```bash
 (cd backend && go test -race ./...)
 (cd mcp-server && npm test)
-(cd frontend && npm run lint && npm run build)
+(cd frontend && npm run lint && npm test && npm run build)
 # In a virtual environment with the SDK's notebook dependencies installed:
 pip install -e './crashlens-sdk[jupyter]'
 PYTHONPATH=crashlens-sdk python -m unittest discover -s crashlens-sdk/tests -v
 ```
+
+## Live telemetry, access, and execution limits
+
+SDK and notebook trackers upload logs, runtime, and the latest GPU samples every
+two seconds. Server-run jobs publish current output and samples every second.
+The dashboard polls every three seconds, so running-job charts update before
+completion. Logs and samples are bounded to avoid accumulating an entire long run.
+
+When `CRASHLENS_API_KEY` is configured, the default `ACCESS_MODE=private` protects
+reads and writes. Enter the key in the dashboard; it stays in memory and is never
+embedded in the frontend bundle. `ACCESS_MODE=demo` makes reads public explicitly,
+while mutations and diagnoses still require the key. Production requires
+`APP_ENV=production` and a configured key. See [access policy](SECURITY.md).
+
+Template execution uses a bounded worker queue (two workers, 16 queued jobs) and
+a 300-second default deadline. Configure these with `JOB_CONCURRENCY`,
+`JOB_QUEUE_SIZE`, and `JOB_TIMEOUT_SECONDS`. Restart recovery marks interrupted
+server-run jobs failed and preserves external SDK jobs. Set exact frontend URLs
+in `ALLOWED_ORIGINS`; only explicit `TRUSTED_PROXY_CIDRS` can supply forwarded IPs.
+
+Run `python3 scripts/docker_smoke.py` for isolated container, authentication,
+telemetry, queue, deadline, persistence, recovery, and MCP validation. It creates
+and removes its own Compose project and volume. Run `scripts/validate_gpu.py` on
+a supported GPU host to verify real hardware; the command refuses CPU/simulation.

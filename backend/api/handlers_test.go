@@ -81,6 +81,10 @@ func TestSDKLifecycleAndFallbackPersistence(t *testing.T) {
 		t.Fatal("stale report or classification")
 	}
 	call("PUT", "/workloads/"+id, `{"status":"succeeded","exit_code":0}`)
+	late := call("PUT", "/workloads/"+id, `{"status":"running","job_logs":"late upload"}`)
+	if late.Code != http.StatusConflict {
+		t.Fatal("late uploader revived completed workload")
+	}
 	diagnosed = call("POST", "/workloads/"+id+"/diagnose", "")
 	if diagnosed.Code != http.StatusConflict {
 		t.Fatal("success must not be diagnosed")

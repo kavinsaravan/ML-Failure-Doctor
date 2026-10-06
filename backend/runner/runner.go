@@ -38,6 +38,12 @@ type MetricsSnapshot struct {
 
 // RunPythonJob executes a Python script with streaming logs and metrics collection
 func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	return RunPythonJobContext(ctx, scriptPath, workloadID, database)
+}
+
+func RunPythonJobContext(ctx context.Context, scriptPath string, workloadID int, database *db.DB) (*JobResult, error) {
 	startTime := time.Now()
 
 	// Update workload status to running
@@ -70,25 +76,14 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 		}
 		return nil, cause
 	}
-	// Prepare command
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "python3", scriptPath)
-
-	// Create pipes for streaming stdout/stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return failStart(err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return failStart(err)
-	}
-
-	// Buffer to collect all logs (with mutex for thread safety)
+	// Unbuffered Python output makes progress available before process exit.
+	cmd := exec.CommandContext(ctx, "python3", "-u", scriptPath)
+	configureCancellation(cmd)
 	var logBuffer bytes.Buffer
 	var logMutex sync.Mutex
-
-	// Start the command
+	output := &lockedLogWriter{buffer: &logBuffer, mutex: &logMutex}
+	cmd.Stdout = output
+	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {
 		return failStart(err)
 	}
@@ -103,32 +98,44 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 		collectMetricsToSlice(metricsCtx, scriptPath, &allMetrics, &metricsMutex)
 	}()
 
-	// WaitGroup to ensure all output is read before cmd.Wait()
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// Stream stdout
+	// Persist current logs and samples while the process is running.
+	liveCtx, stopLive := context.WithCancel(context.Background())
+	liveDone := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		streamOutput(stdout, &logBuffer, &logMutex, "STDOUT")
+		defer close(liveDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-liveCtx.Done():
+				return
+			case <-ticker.C:
+				logMutex.Lock()
+				logs := logBuffer.String()
+				logMutex.Unlock()
+				metricsMutex.Lock()
+				samples := append([]MetricsSnapshot{}, allMetrics...)
+				metricsMutex.Unlock()
+				encoded, _ := json.Marshal(samples)
+				if err := database.UpdateTelemetry(workloadID, logs, string(encoded), time.Since(startTime).Seconds()); err != nil {
+					log.Printf("Live telemetry for job %d: %v", workloadID, err)
+				}
+			}
+		}
 	}()
-
-	// Stream stderr
-	go func() {
-		defer wg.Done()
-		streamOutput(stderr, &logBuffer, &logMutex, "STDERR")
-	}()
-
-	// Wait for all output to be read first
-	wg.Wait()
-
-	// Now it's safe to wait for the command
 	err = cmd.Wait()
 	runtime := time.Since(startTime).Seconds()
-
-	// Stop metrics collection and wait for collector to fully exit
 	cancelMetrics()
-	<-metricsDone // Collector has fully exited; safe to read allMetrics without lock
+	stopLive()
+	<-metricsDone
+	<-liveDone
+	if ctx.Err() != nil {
+		text := "Job canceled: " + ctx.Err().Error()
+		if ctx.Err() == context.DeadlineExceeded {
+			text = "Job execution timeout: " + ctx.Err().Error()
+		}
+		output.Write([]byte("\n" + text + "\n"))
+	}
 
 	// Format metrics as JSON
 	metricsJSON, _ := json.MarshalIndent(allMetrics, "", "  ")
@@ -143,7 +150,7 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	}
 
 	// Get exit code
-	if err != nil {
+	if err != nil || ctx.Err() != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			result.ExitCode = exitErr.ExitCode()
 		} else {
@@ -169,6 +176,9 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	if result.ExitCode != 0 {
 		workload.Status = "failed"
 		failureType := classifier.ClassifyFailure(logs, result.GPUMetrics)
+		if ctx.Err() == context.DeadlineExceeded {
+			failureType = classifier.Timeout
+		}
 		workload.FailureType = &failureType
 
 		// Calculate wasted GPU seconds (assuming 1 GPU for now)
@@ -186,6 +196,24 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 		workloadID, workload.Status, result.ExitCode, runtime)
 
 	return result, nil
+}
+
+// Keep a bounded tail of logs while allowing concurrent stdout/stderr writes.
+type lockedLogWriter struct {
+	buffer *bytes.Buffer
+	mutex  *sync.Mutex
+}
+
+func (w *lockedLogWriter) Write(chunk []byte) (int, error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.buffer.Write(chunk)
+	if w.buffer.Len() > 256*1024 {
+		tail := append([]byte{}, w.buffer.Bytes()[w.buffer.Len()-256*1024:]...)
+		w.buffer.Reset()
+		w.buffer.Write(tail)
+	}
+	return len(chunk), nil
 }
 
 // streamOutput reads from a pipe and writes to buffer with optional logging
@@ -215,6 +243,13 @@ func collectMetricsToSlice(ctx context.Context, scriptPath string, metrics *[]Me
 	// Determine job type from script path for simulation
 	jobType := getJobType(scriptPath)
 	iteration := 0
+	if ctx.Err() == nil {
+		snapshot := collectGPUMetricsSnapshot(jobType, iteration)
+		mutex.Lock()
+		*metrics = append(*metrics, snapshot)
+		mutex.Unlock()
+		iteration++
+	}
 
 	for {
 		select {
@@ -224,6 +259,9 @@ func collectMetricsToSlice(ctx context.Context, scriptPath string, metrics *[]Me
 			snapshot := collectGPUMetricsSnapshot(jobType, iteration)
 			mutex.Lock()
 			*metrics = append(*metrics, snapshot)
+			if len(*metrics) > 300 {
+				*metrics = append([]MetricsSnapshot{}, (*metrics)[len(*metrics)-300:]...)
+			}
 			mutex.Unlock()
 			iteration++
 		}

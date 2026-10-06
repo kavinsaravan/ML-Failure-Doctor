@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
-	"log"
+	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"crashlens/db"
 	"crashlens/diagnosis"
@@ -16,10 +18,16 @@ import (
 type Server struct {
 	DB       *db.DB
 	FWClient *fireworks.Client
+	Runner   *runner.Manager
 }
 
 func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	mode := os.Getenv("ACCESS_MODE")
+	if mode == "" {
+		mode = "private"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "auth_required": os.Getenv("CRASHLENS_API_KEY") != "" && mode != "demo", "access_mode": mode})
 }
 
 func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +110,11 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	previousStatus := existing.Status
+	if updates.Status == "running" && (existing.Status == "failed" || existing.Status == "succeeded") {
+		http.Error(w, "Completed workloads cannot return to running", http.StatusConflict)
+		return
+	}
 	// Reports are invalidated whenever their input changes.
 	if (updates.Status != "" && updates.Status != existing.Status) || updates.JobLogs != nil || updates.GPUMetrics != nil || updates.FailureType != nil || updates.RuntimeSeconds != nil {
 		existing.FailureReport = nil
@@ -148,7 +161,11 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		existing.GPUMetrics = updates.GPUMetrics
 	}
 
-	if err := s.DB.UpdateWorkload(id, existing); err != nil {
+	if err := s.DB.UpdateWorkloadIfStatus(id, existing, previousStatus); err != nil {
+		if errors.Is(err, db.ErrWorkloadChanged) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -202,12 +219,12 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 
 	// SECURITY: Only allow predefined templates, never accept arbitrary script paths
 	templateMap := map[string]string{
-		"gpu_oom":            "./jobs/gpu_oom.py",
-		"missing_checkpoint": "./jobs/missing_checkpoint.py",
-		"dependency_error":   "./jobs/dependency_error.py",
-		"data_path_error":    "./jobs/data_path_error.py",
-		"timeout":            "./jobs/timeout.py",
-		"successful":         "./jobs/successful_training.py",
+		"gpu_oom":            "gpu_oom.py",
+		"missing_checkpoint": "missing_checkpoint.py",
+		"dependency_error":   "dependency_error.py",
+		"data_path_error":    "data_path_error.py",
+		"timeout":            "timeout.py",
+		"successful":         "successful_training.py",
 	}
 
 	scriptPath, ok := templateMap[req.Template]
@@ -220,19 +237,27 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		req.Name = "Test Job: " + req.Template
 	}
 
-	// Create workload entry
-	id, err := s.DB.CreateWorkload(req.Name, req.Type, "pending")
+	jobsDir := os.Getenv("JOBS_DIR")
+	if jobsDir == "" {
+		jobsDir = "./jobs"
+		if _, err := os.Stat(jobsDir); err != nil {
+			jobsDir = "../jobs"
+		}
+	}
+	if s.Runner == nil {
+		http.Error(w, "Job runner unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id, err := s.Runner.Submit(req.Name, req.Type, filepath.Join(jobsDir, scriptPath))
 	if err != nil {
+		if errors.Is(err, runner.ErrQueueFull) || errors.Is(err, runner.ErrStopped) {
+			w.Header().Set("Retry-After", "5")
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// Run job asynchronously
-	go func() {
-		if _, err := runner.RunPythonJob(scriptPath, int(id), s.DB); err != nil {
-			log.Printf("Job %d failed: %v", id, err)
-		}
-	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -352,4 +377,9 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(report)
+}
+
+func (s *Server) SessionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"authenticated": true, "auth_required": os.Getenv("CRASHLENS_API_KEY") != ""})
 }

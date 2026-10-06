@@ -1,10 +1,23 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
-// Headers to bypass ngrok browser warning
-const getHeaders = () => ({
+let apiKey = '';
+
+// The key stays in memory; it is never embedded in the build or stored on disk.
+const getHeaders = (key = apiKey) => ({
   'ngrok-skip-browser-warning': 'true',
   'Content-Type': 'application/json',
+  ...(key ? { Authorization: `Bearer ${key}` } : {}),
 });
+
+async function checkResponse(res: Response, message: string) {
+  if (res.ok) return;
+  if (res.status === 401 && typeof window !== 'undefined') {
+    apiKey = '';
+    window.dispatchEvent(new Event('crashlens-auth-required'));
+  }
+  const detail = await res.text();
+  throw new Error(detail || message);
+}
 
 export interface Workload {
   id: number;
@@ -46,11 +59,22 @@ export interface DiagnosisReport {
 }
 
 export const api = {
+  hasAPIKey() { return apiKey.length > 0; },
+  setAPIKey(key: string) { apiKey = key; },
+  async getAccessRequirements(): Promise<{ auth_required: boolean }> {
+    const res = await fetch(`${API_URL}/health`, { headers: getHeaders(), cache: 'no-store' });
+    await checkResponse(res, 'Backend unavailable');
+    return res.json();
+  },
+  async checkAccess(key = apiKey): Promise<void> {
+    const res = await fetch(`${API_URL}/session`, { headers: getHeaders(key), cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status === 401 ? 'Enter a valid API key.' : 'Backend unavailable');
+  },
   async getWorkloads(): Promise<Workload[]> {
     const res = await fetch(`${API_URL}/workloads`, {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to fetch workloads');
+    await checkResponse(res, 'Failed to fetch workloads');
     return res.json();
   },
 
@@ -58,7 +82,7 @@ export const api = {
     const res = await fetch(`${API_URL}/workloads/${id}`, {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to fetch workload');
+    await checkResponse(res, 'Failed to fetch workload');
     return res.json();
   },
 
@@ -66,7 +90,7 @@ export const api = {
     const res = await fetch(`${API_URL}/summary`, {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to fetch stats');
+    await checkResponse(res, 'Failed to fetch stats');
     return res.json();
   },
 
@@ -76,7 +100,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify({ type, template }),
     });
-    if (!res.ok) throw new Error('Failed to run workload');
+    await checkResponse(res, 'Failed to run workload');
     return res.json();
   },
 
@@ -85,7 +109,7 @@ export const api = {
       method: 'POST',
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to diagnose workload');
+    await checkResponse(res, 'Failed to diagnose workload');
     return res.json();
   },
 
@@ -94,6 +118,6 @@ export const api = {
       method: 'DELETE',
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to clear workloads');
+    await checkResponse(res, 'Failed to clear workloads');
   },
 };

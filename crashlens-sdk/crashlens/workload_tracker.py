@@ -8,6 +8,7 @@ import traceback
 import sys
 import logging
 from functools import wraps
+from threading import Thread, Event, Lock
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 
@@ -16,6 +17,22 @@ try:
     METRICS_AVAILABLE = True
 except ImportError:
     METRICS_AVAILABLE = False
+
+
+class LogBuffer:
+    """Bounded, thread-safe tail of captured output."""
+    def __init__(self, limit=256 * 1024):
+        self.limit = limit
+        self.text = ""
+        self.lock = Lock()
+
+    def append(self, text):
+        with self.lock:
+            self.text = (self.text + text).encode("utf-8")[-self.limit:].decode("utf-8", errors="ignore")
+
+    def snapshot(self):
+        with self.lock:
+            return self.text
 
 
 class WorkloadTracker:
@@ -40,7 +57,10 @@ class WorkloadTracker:
             pass
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None):
+    def __init__(self, api_url: str, api_key: Optional[str] = None, upload_interval: float = 2.0):
+        if upload_interval <= 0:
+            raise ValueError("upload_interval must be positive")
+        self.upload_interval = upload_interval
         self.api_url = api_url.rstrip('/')
         self.api_key = api_key
         self.workload_id: Optional[int] = None
@@ -70,7 +90,8 @@ class WorkloadTracker:
         runtime_seconds: Optional[float] = None,
         exit_code: Optional[int] = None,
         failure_type: Optional[str] = None,
-        gpu_metrics: Optional[str] = None
+        gpu_metrics: Optional[str] = None,
+        timeout: float = 15
     ):
         """Update workload status"""
         data = {"status": status}
@@ -88,7 +109,7 @@ class WorkloadTracker:
         response = requests.put(
             f"{self.api_url}/workloads/{workload_id}",
             json=data,
-            headers=self.headers, timeout=15
+            headers=self.headers, timeout=timeout
         )
     
         response.raise_for_status()
@@ -104,7 +125,7 @@ class WorkloadTracker:
         """
         workload_id = self._create_workload(name)
         start_time = time.monotonic()
-        logs = []
+        logs = LogBuffer()
 
         # Start GPU metrics collection
         sampler = None
@@ -136,6 +157,26 @@ class WorkloadTracker:
         sys.stdout = LogCapture(old_stdout)
         sys.stderr = LogCapture(old_stderr)
 
+        stop_live = Event()
+
+        def publish_live():
+            while not stop_live.wait(self.upload_interval):
+                try:
+                    samples = sampler.snapshot() if sampler else []
+                    self._update_workload(
+                        workload_id, status="running", logs=logs.snapshot(),
+                        runtime_seconds=time.monotonic() - start_time,
+                        gpu_metrics=GPUMetricsSampler.to_json(samples) if sampler else "",
+                        timeout=5
+                    )
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "CrashLens live upload failed for workload %s", workload_id, exc_info=True
+                    )
+
+        publisher = Thread(target=publish_live, daemon=True)
+        publisher.start()
+
         status = "succeeded"
         exit_code = 0
 
@@ -146,13 +187,17 @@ class WorkloadTracker:
             # Failure - set status but don't update yet
             status = "succeeded" if isinstance(e, SystemExit) and e.code in (None, 0) else "failed"
             exit_code = 0 if status == "succeeded" else 1
-            error_logs = "".join(logs) + "\n\n" + traceback.format_exc()
-            logs = [error_logs]
+            logs.append("\n\n" + traceback.format_exc())
             raise
 
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
+
+            runtime = time.monotonic() - start_time
+            # Stop uploads before the terminal status update.
+            stop_live.set()
+            publisher.join(timeout=12)
 
             # Stop GPU metrics collection
             gpu_metrics = None
@@ -163,11 +208,10 @@ class WorkloadTracker:
                 except Exception:
                     logging.getLogger(__name__).warning("GPU sampling cleanup failed", exc_info=True)
 
-            # Update workload with logs and metrics
-            runtime = time.monotonic() - start_time
+            # Update workload with logs and metrics; cleanup latency is not training time.
             try:
                 self._update_workload(
-                    workload_id, status=status, logs="".join(logs),
+                    workload_id, status=status, logs=logs.snapshot(),
                     runtime_seconds=runtime, exit_code=exit_code, gpu_metrics=gpu_metrics
                 )
             except Exception:

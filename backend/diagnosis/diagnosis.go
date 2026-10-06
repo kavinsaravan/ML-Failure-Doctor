@@ -2,6 +2,7 @@ package diagnosis
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"crashlens/classifier"
@@ -37,6 +38,10 @@ func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
 	}
 	classResult = classifier.ClassifyWithConfidence(logs, gpuMetrics)
 	failureType = classResult.FailureType
+	if workload.FailureType != nil && *workload.FailureType == classifier.Timeout && strings.Contains(logs, "Job execution timeout:") {
+		failureType = classifier.Timeout
+		classResult.Confidence = .92
+	}
 	if failureType == classifier.UnknownError && workload.FailureType != nil {
 		failureType = *workload.FailureType // Preserve externally supplied labels without inflating confidence.
 	}

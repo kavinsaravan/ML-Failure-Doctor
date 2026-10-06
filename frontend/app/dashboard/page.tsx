@@ -9,7 +9,6 @@ import {
   CheckCircle,
   Clock,
   TrendingUp,
-  Timer,
   PlayCircle,
   Trash2,
 } from 'lucide-react';
@@ -48,7 +47,7 @@ export default function Dashboard() {
       console.log('Job started:', result);
       setTimeout(loadData, 1000);
     } catch (error) {
-      console.error('Failed to run job:', error);
+      alert('Failed to run job: ' + (error as Error).message);
     } finally {
       setRunningJob(null);
     }
@@ -64,7 +63,7 @@ export default function Dashboard() {
       loadData();
     } catch (error) {
       console.error('Failed to clear workloads:', error);
-      alert('Failed to clear workloads. Please try again.');
+      alert('Failed to clear workloads. Check your API access.');
     }
   };
 
@@ -140,7 +139,7 @@ export default function Dashboard() {
           <p className="text-slate-400 mb-4">Monitor and diagnose GPU workloads across all platforms</p>
 
           {/* Clear All Button - only show in development */}
-          {workloads.length > 0 && process.env.NODE_ENV !== 'production' && (
+          {workloads.length > 0 && (
             <button
               onClick={handleClearAll}
               className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -199,10 +198,10 @@ export default function Dashboard() {
 
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Timer className="w-4 h-4 text-cyan-400" />
-              <span className="text-sm text-slate-400">Avg Diagnosis</span>
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span className="text-sm text-slate-400">Active Jobs</span>
             </div>
-            <div className="text-2xl font-bold text-white">&lt;1s</div>
+            <div className="text-2xl font-bold text-white">{workloads.filter(w => w.status === 'running' || w.status === 'pending').length}</div>
           </div>
         </div>
 

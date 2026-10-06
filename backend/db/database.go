@@ -4,6 +4,8 @@ import (
 	"crashlens/classifier"
 	"crashlens/metrics"
 	"database/sql"
+	"errors"
+	"fmt"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -63,11 +65,22 @@ func initSchema(db *sql.DB) error {
 		job_logs TEXT,
 		gpu_metrics TEXT,
 		checkpoint_state TEXT,
-		failure_report TEXT
+		failure_report TEXT,
+  runner_managed INTEGER NOT NULL DEFAULT 0
 	);
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('workloads') WHERE name = 'runner_managed'").Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		_, err := db.Exec("ALTER TABLE workloads ADD COLUMN runner_managed INTEGER NOT NULL DEFAULT 0")
+		return err
+	}
+	return nil
 }
 
 func (db *DB) GetWorkloads() ([]Workload, error) {
@@ -124,21 +137,39 @@ func (db *DB) CreateWorkload(name, workloadType, status string) (int64, error) {
 	return result.LastInsertId()
 }
 
+var ErrWorkloadChanged = errors.New("workload changed during update")
+
 func (db *DB) UpdateWorkload(id string, workload *Workload) error {
+	return db.updateWorkload(id, workload, nil)
+}
+func (db *DB) UpdateWorkloadIfStatus(id string, workload *Workload, status string) error {
+	return db.updateWorkload(id, workload, &status)
+}
+func (db *DB) updateWorkload(id string, workload *Workload, expectedStatus *string) error {
 	NormalizeLifecycle(workload)
-	_, err := db.Exec(`
+	result, err := db.Exec(`
 		UPDATE workloads
 		SET name = ?, type = ?, status = ?, failure_type = ?,
 		    started_at = ?, finished_at = ?, runtime_seconds = ?,
 		    exit_code = ?, wasted_gpu_seconds = ?,
 		    job_logs = ?, gpu_metrics = ?, checkpoint_state = ?,
 		    failure_report = ?
-		WHERE id = ?
-	`, workload.Name, workload.Type, workload.Status, workload.FailureType,
+  WHERE id = ? AND (? IS NULL OR status = ?)
+ `, workload.Name, workload.Type, workload.Status, workload.FailureType,
 		workload.StartedAt, workload.FinishedAt, workload.RuntimeSeconds,
 		workload.ExitCode, workload.WastedGPUSeconds, workload.JobLogs,
-		workload.GPUMetrics, workload.CheckpointState, workload.FailureReport, id)
-	return err
+		workload.GPUMetrics, workload.CheckpointState, workload.FailureReport, id, expectedStatus, expectedStatus)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrWorkloadChanged
+	}
+	return nil
 }
 
 // NormalizeLifecycle applies server-owned metadata to SDK and runner updates.
@@ -220,4 +251,70 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 	stats["failure_types"] = failureTypes
 	stats["gpu_platform"] = metrics.GetCollector("").Name()
 	return stats, nil
+}
+
+func (db *DB) CreateManagedWorkload(name, kind string) (int64, error) {
+	result, err := db.Exec("INSERT INTO workloads (name,type,status,runner_managed) VALUES (?,?,'pending',1)", name, kind)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+func (db *DB) UpdateTelemetry(id int, logs, metrics string, runtime float64) error {
+	_, err := db.Exec("UPDATE workloads SET job_logs=?,gpu_metrics=?,runtime_seconds=? WHERE id=? AND status='running'", logs, metrics, runtime, id)
+	return err
+}
+
+// Only server-managed processes were lost. SDK jobs can keep running on external hosts.
+func (db *DB) RecoverManagedJobs(reason string) error {
+	rows, err := db.Query("SELECT id FROM workloads WHERE runner_managed=1 AND status IN ('pending','running')")
+	if err != nil {
+		return err
+	}
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		w, err := db.GetWorkload(fmt.Sprint(id))
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		runtime := 0.0
+		if w.StartedAt != nil {
+			runtime = now.Sub(*w.StartedAt).Seconds()
+		}
+		logs := ""
+		if w.JobLogs != nil {
+			logs = *w.JobLogs
+		}
+		logs += "\nJob interrupted: " + reason
+		code := 1
+		failure := classifier.UnknownError
+		w.Status = "failed"
+		w.FinishedAt = &now
+		if w.StartedAt != nil {
+			w.RuntimeSeconds = &runtime
+		} else {
+			w.RuntimeSeconds = nil
+		}
+		w.ExitCode = &code
+		w.JobLogs = &logs
+		w.FailureType = &failure
+		if err := db.UpdateWorkload(fmt.Sprint(id), w); err != nil {
+			return err
+		}
+	}
+	return nil
 }

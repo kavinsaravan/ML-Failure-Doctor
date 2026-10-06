@@ -1,162 +1,52 @@
-# CrashLens Production Setup Guide
+# Deployment and real workloads
 
-## Getting Started with Real Workloads
+1. Copy `.env.example` to `.env` and configure `CRASHLENS_API_KEY`,
+   `APP_ENV=production`, and `ACCESS_MODE=private`.
+2. Set `NEXT_PUBLIC_API_URL` to the backend URL reachable from the browser and
+   `ALLOWED_ORIGINS` to the exact dashboard origin. Rebuild when the public URL changes.
+3. Start with `docker compose up --build -d`. SQLite lives in the named data volume. Run one backend instance per database.
+4. Open the dashboard and enter the API key. It remains in memory until refresh.
+5. Configure SDK and MCP clients with the same key.
 
-### Step 1: Install the SDK
+```python
+import os
+from crashlens import WorkloadTracker
+
+tracker = WorkloadTracker(
+    os.environ["CRASHLENS_URL"],
+    api_key=os.environ["CRASHLENS_API_KEY"],
+)
+with tracker.track("Model training"):
+    train_model()
+```
+
+The SDK uploads current logs, runtime, and GPU samples every two seconds, followed
+by a terminal update. Dashboard pages poll every three seconds. No GPU readings
+are invented by the SDK when no GPU is available. Notebook tracking uses the same
+publisher. Reporting errors do not replace training errors.
+
+Set `JOB_CONCURRENCY`, `JOB_QUEUE_SIZE`, and `JOB_TIMEOUT_SECONDS` for server-run
+template jobs. Queue overflow returns 503 with Retry-After; IP throttling returns
+429. On restart, lost server-managed work is marked failed with an interruption
+reason. External SDK jobs remain running and can resume uploading to the restarted
+API. SDK kernel/process kills still need external liveness monitoring.
+
+Use `TRUSTED_PROXY_CIDRS` only when the actual proxy network is known. Do not trust
+all networks merely to enable forwarded headers. See [access policy](SECURITY.md).
+
+Validate containers without modifying the application's data:
 
 ```bash
-cd crashlens-sdk
-pip install -e .
+python3 scripts/docker_smoke.py
 ```
 
-### Step 2: Wrap Your Training Code
-
-**Before:**
-```python
-model.fit(X_train, y_train, epochs=10)
-```
-
-**After:**
-```python
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://invigorating-empathy-production-dee5.up.railway.app")
-
-with tracker.track("Model Training"):
-    model.fit(X_train, y_train, epochs=10)
-```
-
-That's it! CrashLens now tracks your workload.
-
-### Step 3: View Results
-
-Go to your dashboard:
-```
-https://frontend-zeta-eight-92.vercel.app/dashboard
-```
-
-## Real-World Integration Examples
-
-### 1. Local Development (No GPU Required)
-
-```python
-# test_crashlens.py
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://invigorating-empathy-production-dee5.up.railway.app")
-
-with tracker.track("Test Job - Local"):
-    print("Running computation...")
-    result = sum(range(1000000))
-    print(f"Result: {result}")
-```
-
-Run it:
-```bash
-python test_crashlens.py
-```
-
-Check the dashboard - you'll see it tracked!
-
-### 2. Real PyTorch Training
-
-If you have PyTorch installed:
+On a NVIDIA/AMD host with GPU-compatible PyTorch and the SDK installed:
 
 ```bash
-cd crashlens-sdk/examples
-pip install torch
-python pytorch_training.py
+export CRASHLENS_URL=https://your-backend.example
+export CRASHLENS_API_KEY=your-key
+python3 scripts/validate_gpu.py
 ```
 
-### 3. With Your Existing Code
-
-Just import and wrap:
-
-```python
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://invigorating-empathy-production-dee5.up.railway.app")
-
-# Wrap any function
-with tracker.track("Data Processing"):
-    df = pd.read_csv("large_file.csv")
-    df_clean = preprocess(df)
-    df_clean.to_csv("output.csv")
-
-# It works with everything!
-with tracker.track("Model Inference"):
-    predictions = model.predict(test_data)
-```
-
-## Using with Cloud GPUs
-
-### Google Colab
-
-```python
-# In your Colab notebook
-!pip install requests
-
-# Copy the SDK files or install from your repo
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://invigorating-empathy-production-dee5.up.railway.app")
-
-with tracker.track("Colab Training"):
-    # Your GPU training code
-    model.fit(...)
-```
-
-### AWS SageMaker
-
-```python
-# In your training script
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker(os.environ['CRASHLENS_URL'])
-
-with tracker.track(f"SageMaker Job - {job_name}"):
-    estimator.fit()
-```
-
-### Runpod / Vast.ai
-
-Same approach - just add the tracker wrapper!
-
-## What Gets Tracked?
-
-- ✅ Start/end time
-- ✅ Runtime duration
-- ✅ Exit code (success/failure)
-- ✅ Full stdout/stderr logs
-- ✅ Exception tracebacks
-- ✅ GPU metrics (nvidia-smi/rocm-smi or simulated)
-- ✅ GPU memory usage, utilization, temperature
-- ✅ Failure classification and diagnosis
-
-## Next Steps
-
-1. **Integrate with your code**: Add 3 lines of code
-2. **Run a job**: Execute your script
-3. **Check dashboard**: View results
-4. **Simulate a failure**: Raise an exception
-5. **Get AI diagnosis**: Click "Run AI Diagnosis"
-
-## Cost Tracking
-
-CrashLens automatically calculates:
-- Wasted GPU-seconds on failures
-- Total runtime per job
-- Most common failure types
-- Success rate percentage
-
-Perfect for:
-- Optimizing training costs
-- Finding recurring issues
-- Improving reliability
-
-## Questions?
-
-- Check the SDK README: `crashlens-sdk/README.md`
-- View examples: `crashlens-sdk/examples/`
-- Dashboard: https://frontend-zeta-eight-92.vercel.app
-
+The hardware test runs a small training loop and requires real GPU readings to
+reach the API before completion. It refuses CPU fallback and simulated readings.

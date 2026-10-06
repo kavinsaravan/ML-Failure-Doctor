@@ -1,6 +1,8 @@
 import io
 import json
 import sys
+import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 from IPython.core.interactiveshell import InteractiveShell
@@ -44,6 +46,33 @@ class TrackingTests(unittest.TestCase):
         data = self.put.call_args.kwargs["json"]
         self.assertEqual(data["status"], "succeeded")
         self.assertIn("epoch 1", data["job_logs"])
+
+    def test_live_metrics_and_logs_are_sent_before_exit(self):
+        live = threading.Event()
+        sample = {"gpu_memory_used_mb": 1024, "gpu_memory_total_mb": 2048, "source": "test-fixture"}
+        class Sampler:
+            def start(self): pass
+            def snapshot(self): return [sample]
+            def stop(self): return [sample]
+            @staticmethod
+            def to_json(samples): return json.dumps(samples)
+        payloads = []
+        def put(*args, **kwargs):
+            payloads.append(kwargs["json"])
+            if kwargs["json"]["status"] == "running": live.set()
+            return Mock()
+        self.put.side_effect = put
+        with patch("crashlens.workload_tracker.METRICS_AVAILABLE", True), patch("crashlens.workload_tracker.GPUMetricsSampler", Sampler), patch("sys.stdout", io.StringIO()):
+            with WorkloadTracker("http://test", upload_interval=.02).track("live"):
+                print("epoch progress")
+                self.assertTrue(live.wait(2), "no live update before context exit")
+                running = [data for data in payloads if data["status"] == "running"][-1]
+                self.assertIn("epoch progress", running["job_logs"])
+                self.assertEqual(json.loads(running["gpu_metrics"])[0]["gpu_memory_used_mb"], 1024)
+        self.assertEqual(payloads[-1]["status"], "succeeded")
+        count = len(payloads)
+        time.sleep(.05)
+        self.assertEqual(len(payloads), count, "publisher continued after finalization")
 
     def test_notebook_magic_marks_failed_cell_and_diagnoses(self):
         shell = InteractiveShell.instance()

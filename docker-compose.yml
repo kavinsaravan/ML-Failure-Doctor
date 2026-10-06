@@ -4,13 +4,20 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     environment:
       PORT: "8080"
       DATABASE_PATH: /app/data/crashlens.db
       FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:-}
       FIREWORKS_MODEL: ${FIREWORKS_MODEL:-}
       CRASHLENS_API_KEY: ${CRASHLENS_API_KEY:-}
+      ACCESS_MODE: ${ACCESS_MODE:-private}
+      APP_ENV: ${APP_ENV:-development}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      JOB_CONCURRENCY: ${JOB_CONCURRENCY:-2}
+      JOB_QUEUE_SIZE: ${JOB_QUEUE_SIZE:-16}
+      JOB_TIMEOUT_SECONDS: ${JOB_TIMEOUT_SECONDS:-300}
     volumes:
       - crashlens-data:/app/data
     restart: unless-stopped
@@ -29,7 +36,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
     depends_on:

@@ -50,3 +50,6 @@ Dockerfile*
 
 # Vercel
 .vercel
+
+# Exclude every deployment environment file from the image build.
+.env.*
