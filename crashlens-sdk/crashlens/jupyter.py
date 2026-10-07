@@ -55,8 +55,8 @@ class JupyterWorkloadTracker(WorkloadTracker):
             model.fit(X_train, y_train, epochs=10)
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None):
-        super().__init__(api_url, api_key)
+    def __init__(self, api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None):
+        super().__init__(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model)
         self.in_jupyter = self._check_jupyter()
 
     def _check_jupyter(self) -> bool:
@@ -364,7 +364,7 @@ if JUPYTER_AVAILABLE:
             # Get API key from environment, never from cell source
             api_key = os.getenv("CRASHLENS_API_KEY")
 
-            self.tracker = JupyterWorkloadTracker(api_url, api_key)
+            self.tracker = JupyterWorkloadTracker(api_url, api_key, fireworks_api_key=os.getenv("FIREWORKS_API_KEY"), fireworks_model=os.getenv("FIREWORKS_MODEL"))
             display(HTML(f"""
             <div style="border: 2px solid #27ae60; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #eafaf1;">
                 <h4 style="color: #27ae60; margin: 0;">✓ CrashLens Initialized</h4>

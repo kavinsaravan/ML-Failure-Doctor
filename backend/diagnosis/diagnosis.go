@@ -11,16 +11,17 @@ import (
 )
 
 type Report struct {
-	FailureType     string    `json:"failure_type"`
-	Confidence      float64   `json:"confidence"`
-	RootCause       string    `json:"root_cause"`
-	Evidence        []string  `json:"evidence"`
-	RecommendedFix  string    `json:"recommended_fix"`
-	SafeToRetry     bool      `json:"safe_to_retry"`
-	DiagnosedAt     time.Time `json:"diagnosed_at"`
-	ConfidenceBasis string    `json:"confidence_basis"`
-	Prevention      string    `json:"prevention,omitempty"`
-	Source          string    `json:"source"` // "ai" or "rules"
+	AIUnavailableReason string    `json:"ai_unavailable_reason,omitempty"`
+	FailureType         string    `json:"failure_type"`
+	Confidence          float64   `json:"confidence"`
+	RootCause           string    `json:"root_cause"`
+	Evidence            []string  `json:"evidence"`
+	RecommendedFix      string    `json:"recommended_fix"`
+	SafeToRetry         bool      `json:"safe_to_retry"`
+	DiagnosedAt         time.Time `json:"diagnosed_at"`
+	ConfidenceBasis     string    `json:"confidence_basis"`
+	Prevention          string    `json:"prevention,omitempty"`
+	Source              string    `json:"source"` // "ai" or "rules"
 }
 
 func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {

@@ -17,6 +17,21 @@ class TrackingTests(unittest.TestCase):
         self.post.return_value.json.return_value = {"id": 7}
         self.addCleanup(patch.stopall)
 
+    def test_fireworks_credentials_only_sent_for_diagnosis(self):
+        tracker = WorkloadTracker("http://test", api_key="crashlens", fireworks_api_key="user-fireworks", fireworks_model="user-model")
+        with tracker.track("job"):
+            pass
+        self.assertNotIn("X-Fireworks-API-Key", self.post.call_args.kwargs["headers"])
+        self.assertNotIn("X-Fireworks-API-Key", self.put.call_args.kwargs["headers"])
+        tracker.diagnose(7)
+        headers = self.post.call_args.kwargs["headers"]
+        self.assertEqual(headers["X-Fireworks-API-Key"], "user-fireworks")
+        self.assertEqual(headers["X-Fireworks-Model"], "user-model")
+        self.assertEqual(headers["Authorization"], "Bearer crashlens")
+        self.assertNotIn("X-Fireworks-API-Key", tracker.headers)
+        with self.assertRaises(ValueError):
+            WorkloadTracker("http://test", fireworks_api_key="secret").diagnose(7)
+
     def test_interruptions_and_exceptions_report_failure(self):
         for error in [KeyboardInterrupt(), SystemExit(2), RuntimeError("broken")]:
             with self.subTest(error=type(error).__name__):

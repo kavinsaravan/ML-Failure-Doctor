@@ -437,5 +437,37 @@ The list endpoint never returns secrets or hashes. Operator endpoints are
 Once any individual keys have been issued, anonymous access is disabled even in
 `ACCESS_MODE=demo`; authenticated keys always see only their own workloads. For
 public hosting use production mode and private access. This feature isolates
-data; user diagnoses still use your backend's Fireworks account. It does not add
-per-user spending quotas or bring-your-own Fireworks credentials.
+data; per-user spending quotas are not included. User AI diagnoses require their own
+Fireworks credentials as described below.
+
+## Use your own Fireworks credits
+
+Connect with your individual CrashLens key, then enter your Fireworks key and an
+exact tool-capable model identifier in the dashboard's Fireworks settings. Keys
+stay in browser memory (not localStorage), are cleared on disconnect/session
+expiration, and are sent only on diagnosis requests. Re-enter them after refresh.
+Use HTTPS for deployed APIs. Choose a serverless model accessible to your account.
+Setting credentials does not call Fireworks; a fresh diagnosis does.
+
+SDK example (also supported by JupyterWorkloadTracker):
+
+```python
+tracker = WorkloadTracker(
+    os.environ["CRASHLENS_URL"],
+    api_key=os.environ["CRASHLENS_API_KEY"],
+    fireworks_api_key=os.environ["FIREWORKS_API_KEY"],
+    fireworks_model=os.environ["FIREWORKS_MODEL"],
+)
+report = tracker.diagnose(workload_id)
+```
+
+Diagnosis requests carry `X-Fireworks-API-Key` and `X-Fireworks-Model` headers.
+The backend creates a request-scoped client to the fixed Fireworks endpoint;
+credentials are never stored in SQLite or included in reports or server logs.
+Your key is sent to CrashLens and Fireworks, so only use a backend you trust.
+User workloads without a Fireworks key get rule-based reports, never the
+operator's credits. Failed user requests also never fall back to the operator's
+account. The operator key can still use backend FIREWORKS_API_KEY/FIREWORKS_MODEL
+for the legacy workspace. Saved AI reports are reused; Re-run Diagnosis makes a
+fresh request with the supplied credentials. Jupyter magic initialization reads
+Fireworks credentials from environment variables, never magic-line arguments.

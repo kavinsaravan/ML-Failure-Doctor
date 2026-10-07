@@ -279,7 +279,7 @@ export default function WorkloadDetail() {
             <p className="text-slate-300 mb-6">
               {diagnosis.source === 'ai'
                 ? 'Generated through Fireworks AI using workload logs and GPU metrics.'
-                : 'Generated from log-matching rules. AI-assisted diagnosis was unavailable.'}
+                : (diagnosis.ai_unavailable_reason || 'Generated from log-matching rules. AI-assisted diagnosis was unavailable.')}
             </p>
 
             {/* Failure Type & Confidence - Prominent Display */}

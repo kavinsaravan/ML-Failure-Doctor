@@ -91,6 +91,10 @@ type Client struct {
 	Client  *http.Client
 }
 
+func NewRequestClient(apiKey, model string) *Client {
+	return &Client{APIKey: apiKey, Model: model, BaseURL: "https://api.fireworks.ai/inference/v1/chat/completions", Client: &http.Client{Timeout: 60 * time.Second}}
+}
+
 func NewClient() *Client {
 	apiKey := os.Getenv("FIREWORKS_API_KEY")
 	if apiKey == "" {

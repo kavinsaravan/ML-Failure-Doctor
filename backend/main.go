@@ -105,7 +105,7 @@ func main() {
 	if origins == "" {
 		origins = "http://localhost:3000,http://localhost:3001"
 	}
-	handler := cors.New(cors.Options{AllowedOrigins: strings.Split(origins, ","), AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, AllowedHeaders: []string{"Content-Type", "Authorization", "ngrok-skip-browser-warning"}}).Handler(buildRouter(server, limiter, mode))
+	handler := cors.New(cors.Options{AllowedOrigins: strings.Split(origins, ","), AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, AllowedHeaders: []string{"Content-Type", "Authorization", "ngrok-skip-browser-warning", "X-Fireworks-API-Key", "X-Fireworks-Model"}}).Handler(buildRouter(server, limiter, mode))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

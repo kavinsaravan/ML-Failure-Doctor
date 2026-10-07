@@ -1,6 +1,8 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 let apiKey = '';
+let fireworksKey = '';
+let fireworksModel = '';
 
 // The key stays in memory; it is never embedded in the build or stored on disk.
 const getHeaders = (key = apiKey) => ({
@@ -13,6 +15,7 @@ async function checkResponse(res: Response, message: string) {
   if (res.ok) return;
   if (res.status === 401 && typeof window !== 'undefined') {
     apiKey = '';
+    fireworksKey = ''; fireworksModel = '';
     window.dispatchEvent(new Event('crashlens-auth-required'));
   }
   const detail = await res.text();
@@ -46,6 +49,7 @@ export interface Stats {
 }
 
 export interface DiagnosisReport {
+  ai_unavailable_reason?: string;
   source: "ai" | "rules";
   confidence_basis?: string;
   prevention?: string;
@@ -59,8 +63,10 @@ export interface DiagnosisReport {
 }
 
 export const api = {
+  setFireworksCredentials(key: string, model: string) { fireworksKey = key.trim(); fireworksModel = model.trim(); },
+  clearFireworksCredentials() { fireworksKey = ''; fireworksModel = ''; },
   hasAPIKey() { return apiKey.length > 0; },
-  setAPIKey(key: string) { apiKey = key; },
+  setAPIKey(key: string) { if (key !== apiKey) { fireworksKey = ''; fireworksModel = ''; } apiKey = key; },
   async getAccessRequirements(): Promise<{ auth_required: boolean }> {
     const res = await fetch(`${API_URL}/health`, { headers: getHeaders(), cache: 'no-store' });
     await checkResponse(res, 'Backend unavailable');
@@ -107,7 +113,9 @@ export const api = {
   async diagnoseWorkload(id: string, refresh = false): Promise<DiagnosisReport> {
     const res = await fetch(`${API_URL}/workloads/${id}/diagnose${refresh ? "?refresh=true" : ""}`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: { ...getHeaders(), ...(fireworksKey ? {
+        'X-Fireworks-API-Key': fireworksKey, 'X-Fireworks-Model': fireworksModel,
+      } : {}) },
     });
     await checkResponse(res, 'Failed to diagnose workload');
     return res.json();

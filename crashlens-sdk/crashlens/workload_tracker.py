@@ -57,9 +57,11 @@ class WorkloadTracker:
             pass
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None, upload_interval: float = 2.0):
+    def __init__(self, api_url: str, api_key: Optional[str] = None, upload_interval: float = 2.0, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None):
         if upload_interval <= 0:
             raise ValueError("upload_interval must be positive")
+        self.fireworks_api_key = fireworks_api_key
+        self.fireworks_model = fireworks_model
         self.upload_interval = upload_interval
         self.api_url = api_url.rstrip('/')
         self.api_key = api_key
@@ -244,9 +246,15 @@ class WorkloadTracker:
         Returns:
             dict with root_cause, recommended_fixes, etc.
         """
+        headers = dict(self.headers)
+        if self.fireworks_api_key:
+            if not self.fireworks_model:
+                raise ValueError("fireworks_model is required with fireworks_api_key")
+            headers["X-Fireworks-API-Key"] = self.fireworks_api_key
+            headers["X-Fireworks-Model"] = self.fireworks_model
         response = requests.post(
             f"{self.api_url}/workloads/{workload_id}/diagnose",
-            headers=self.headers, timeout=75
+            headers=headers, timeout=75
         )
         response.raise_for_status()
         return response.json()
@@ -256,10 +264,10 @@ class WorkloadTracker:
 _global_tracker: Optional[WorkloadTracker] = None
 
 
-def init(api_url: str, api_key: Optional[str] = None):
+def init(api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None):
     """Initialize global tracker"""
     global _global_tracker
-    _global_tracker = WorkloadTracker(api_url, api_key)
+    _global_tracker = WorkloadTracker(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model)
     return _global_tracker
 
 

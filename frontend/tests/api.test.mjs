@@ -18,3 +18,20 @@ test('protected operations send the supplied key and expired keys are cleared', 
     await api.getWorkloads(); assert.equal(requests.at(-1).options.headers.Authorization,undefined);
   } finally { globalThis.fetch=originalFetch; globalThis.window=originalWindow; api.setAPIKey(''); }
 });
+
+
+test('Fireworks credentials are diagnosis-only and cleared on workspace change', async () => {
+  const originalFetch=globalThis.fetch;
+  const requests=[];
+  try {
+    globalThis.fetch=async (url,options) => { requests.push({url,options}); return new Response('{}',{status:200}); };
+    api.setAPIKey('alice'); api.setFireworksCredentials('fireworks-secret','user-model');
+    await api.getWorkloads();
+    assert.equal(requests.at(-1).options.headers['X-Fireworks-API-Key'],undefined);
+    await api.diagnoseWorkload('1',true);
+    assert.equal(requests.at(-1).options.headers['X-Fireworks-API-Key'],'fireworks-secret');
+    assert.equal(requests.at(-1).options.headers['X-Fireworks-Model'],'user-model');
+    api.setAPIKey('bob'); await api.diagnoseWorkload('2');
+    assert.equal(requests.at(-1).options.headers['X-Fireworks-API-Key'],undefined);
+  } finally { globalThis.fetch=originalFetch; api.setAPIKey(''); api.clearFireworksCredentials(); }
+});

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"crashlens/db"
 	"crashlens/diagnosis"
@@ -17,9 +18,10 @@ import (
 )
 
 type Server struct {
-	DB       *db.DB
-	FWClient *fireworks.Client
-	Runner   *runner.Manager
+	DB                  *db.DB
+	FWClient            *fireworks.Client
+	Runner              *runner.Manager
+	FireworksHTTPClient *http.Client
 }
 
 func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
@@ -357,8 +359,30 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// Run diagnosis (may call AI model which costs money)
-	report := diagnosis.RunDiagnosis(workload, s.FWClient)
+	// User credentials are request-scoped and never fall back to the operator account.
+	var client *fireworks.Client
+	key := strings.TrimSpace(r.Header.Get("X-Fireworks-API-Key"))
+	model := strings.TrimSpace(r.Header.Get("X-Fireworks-Model"))
+	if key != "" {
+		if model == "" || len(model) > 256 || len(key) > 4096 {
+			http.Error(w, "Provide a Fireworks model identifier with your Fireworks key", 400)
+			return
+		}
+		client = fireworks.NewRequestClient(key, model)
+		if s.FireworksHTTPClient != nil {
+			client.Client = s.FireworksHTTPClient
+		}
+	} else if middleware.RequestIdentity(r).Admin {
+		client = s.FWClient
+	}
+	report := diagnosis.RunDiagnosis(workload, client)
+	if report.Source == "rules" {
+		if client == nil {
+			report.AIUnavailableReason = "Add your Fireworks API key and a tool-capable model to generate an AI diagnosis."
+		} else {
+			report.AIUnavailableReason = "Fireworks did not return a usable diagnosis. Check your key, model access, credits, and tool-calling support."
+		}
+	}
 
 	// Persist both sources so reloads and MCP queries retain fallback reports.
 	reportJSON, err := json.Marshal(report)
