@@ -136,9 +136,9 @@ export default function Dashboard() {
               </span>
             )}
           </div>
-          <p className="text-slate-400 mb-4">Monitor and diagnose GPU workloads across all platforms</p>
+          <p className="text-slate-400 mb-4">Monitor your GPU workloads and investigate failures</p>
 
-          {/* Clear All Button - only show in development */}
+          {/* Clear only the connected workspace. */}
           {workloads.length > 0 && (
             <button
               onClick={handleClearAll}
@@ -207,7 +207,8 @@ export default function Dashboard() {
 
         {/* Quick Actions */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4">Quick Test Jobs</h2>
+          <h2 className="text-xl font-semibold text-white mb-4">Simulated Example Jobs</h2>
+          <p className="text-slate-400 mb-4">These scripts print predefined training logs and failures on the backend. They do not train models or test your GPU. Use the SDK for real workloads.</p>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
               { template: 'successful', label: 'Successful Job', color: 'green' },

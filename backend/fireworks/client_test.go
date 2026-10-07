@@ -40,3 +40,15 @@ func TestValidAIResponseRetainsPrevention(t *testing.T) {
 		t.Fatalf("valid report lost: %+v %v", result, err)
 	}
 }
+
+func TestOperatorRequiresExplicitModel(t *testing.T) {
+	t.Setenv("FIREWORKS_API_KEY", "test-key")
+	t.Setenv("FIREWORKS_MODEL", "")
+	if NewClient() != nil {
+		t.Fatal("operator AI must not use an implicit private deployment")
+	}
+	t.Setenv("FIREWORKS_MODEL", "accounts/fireworks/models/configured-model")
+	if client := NewClient(); client == nil || client.Model != "accounts/fireworks/models/configured-model" {
+		t.Fatal("explicit model was not used")
+	}
+}

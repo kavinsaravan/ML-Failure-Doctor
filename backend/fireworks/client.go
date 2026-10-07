@@ -101,10 +101,10 @@ func NewClient() *Client {
 		return nil
 	}
 
-	// Use environment variable for model, fallback to deployment
+	// Operator AI is enabled only with explicit credentials and model selection.
 	model := os.Getenv("FIREWORKS_MODEL")
 	if model == "" {
-		model = "accounts/kavinsaravan-hhm94d1/deployments/gas0qxbe"
+		return nil
 	}
 
 	return &Client{
@@ -250,56 +250,4 @@ Provide:
 		return nil, fmt.Errorf("Fireworks returned an incomplete diagnosis")
 	}
 	return &result, nil
-}
-
-// Legacy method for backward compatibility
-func (c *Client) ChatCompletion(messages []Message) (string, error) {
-	if c == nil {
-		return "", nil
-	}
-
-	reqBody := Request{
-		Model:     c.Model,
-		Messages:  messages,
-		MaxTokens: 1000,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequest("POST", c.BaseURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
-
-	resp, err := c.Client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", nil
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var fireworksResp Response
-	if err := json.Unmarshal(body, &fireworksResp); err != nil {
-		return "", err
-	}
-
-	if len(fireworksResp.Choices) == 0 {
-		return "", nil
-	}
-
-	return fireworksResp.Choices[0].Message.Content, nil
 }

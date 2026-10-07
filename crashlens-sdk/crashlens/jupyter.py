@@ -11,20 +11,14 @@ from html import escape
 from .workload_tracker import WorkloadTracker
 import time
 import requests
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from contextlib import contextmanager
-
-try:
-    from .metrics import GPUMetricsSampler
-    METRICS_AVAILABLE = True
-except ImportError:
-    METRICS_AVAILABLE = False
 
 # Check if running in Jupyter
 try:
     from IPython import get_ipython
     from IPython.core.magic import Magics, line_magic, cell_magic, magics_class
-    from IPython.display import display, HTML, JSON, clear_output
+    from IPython.display import display, HTML
     import pandas as pd
     JUPYTER_AVAILABLE = True
 except ImportError:

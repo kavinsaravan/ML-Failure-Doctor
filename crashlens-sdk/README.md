@@ -1,341 +1,49 @@
 # CrashLens Python SDK
 
-Track GPU workloads with automatic failure reporting and AI-powered diagnosis.
+Install from a checkout with `python -m pip install -e ./crashlens-sdk`.
+Extras: `gpu` adds NVIDIA NVML, `jupyter` adds notebook dependencies, and `all`
+includes both. Install GPU-compatible PyTorch separately for CUDA/ROCm/MPS.
 
-## Installation
-
-### Core SDK
-```bash
-cd crashlens-sdk
-pip install -e .
-```
-
-### With Jupyter Notebook Support
-```bash
-pip install -e ".[jupyter]"
-```
-
-This installs additional dependencies:
-- IPython (magic commands)
-- Jupyter notebook
-- pandas (rich displays)
-
-### All Features
-```bash
-pip install -e ".[all]"
-```
-
-## Quick Start
+Create a workspace in the dashboard and save its key. Use credentials from
+secure prompts or environment variables, not notebook source:
 
 ```python
+import os
 from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://your-backend.railway.app")
-
-# Option A: Context Manager (Recommended)
-with tracker.track("Training ResNet-50"):
-    model.fit(X_train, y_train, epochs=10)
-    # Automatically captures logs, errors, and runtime
-
-# Option B: Decorator
-@tracker.track_function("Fine-tuning BERT")
-def train():
-    trainer.train()
-
-train()
-```
-
-## Real-World Examples
-
-### PyTorch Training
-
-```python
-import torch
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://your-backend.railway.app")
-
-with tracker.track("GPT-2 Fine-tuning"):
-    model = GPT2LMHeadModel.from_pretrained("gpt2")
-    trainer = Trainer(model=model, args=training_args)
-    trainer.train()
-```
-
-If training fails (GPU OOM, CUDA/ROCm error, etc.), CrashLens will:
-- ✅ Capture the full error traceback
-- ✅ Record GPU metrics (NVIDIA/AMD)
-- ✅ Classify the failure type
-- ✅ Provide AI-powered diagnosis with fixes
-
-### TensorFlow/Keras
-
-```python
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://your-backend.railway.app")
-
-with tracker.track("Image Classification"):
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
-    model.fit(train_ds, epochs=10, validation_data=val_ds)
-```
-
-### Hugging Face Transformers
-
-```python
-from transformers import Trainer
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://your-backend.railway.app")
-
-with tracker.track("BERT Fine-tuning - MRPC"):
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-    )
-    trainer.train()
-```
-
-## Features
-
-### Automatic Failure Detection
-
-CrashLens automatically detects:
-- **GPU Out of Memory** (CUDA OOM, HIP OOM)
-- **Dependency Errors** (Missing packages, version mismatches)
-- **Data Path Errors** (Missing datasets, corrupted files)
-- **Timeout Issues** (Hung training, deadlocks)
-- **ROCm/CUDA Errors** (Driver issues, compatibility problems)
-
-### AI-Powered Diagnosis
-
-After a failure, get instant AI analysis:
-```python
-# Run diagnosis on a failed workload
-diagnosis = tracker.diagnose(workload_id)
-
-print(diagnosis["root_cause"])
-# "GPU Out of Memory - batch size too large for available memory"
-
-print(diagnosis["recommended_fixes"])
-# 1. Reduce batch size from 32 to 16
-# 2. Enable gradient checkpointing
-# 3. Use mixed precision (FP16)
-# ...
-```
-
-## Dashboard
-
-View all workloads at:
-```
-https://your-frontend.vercel.app/dashboard
-```
-
-Features:
-- Real-time GPU monitoring
-- Automatic failure classification
-- GPU metrics visualization (memory, utilization, temperature)
-- AI-powered recommendations
-- Cost tracking (wasted GPU-seconds)
-
-## Integration with Popular Frameworks
-
-### PyTorch Lightning
-
-```python
-from pytorch_lightning import Trainer
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://your-backend.railway.app")
-
-with tracker.track("Lightning Training"):
-    trainer = Trainer(max_epochs=10)
-    trainer.fit(model, datamodule)
-```
-
-### Ray Train
-
-```python
-from ray.train import ScalingConfig
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://your-backend.railway.app")
-
-with tracker.track("Distributed Training"):
-    trainer = TorchTrainer(
-        train_func,
-        scaling_config=ScalingConfig(num_workers=4)
-    )
-    result = trainer.fit()
-```
-
-### AutoGPTQ (LLM Quantization)
-
-```python
-from auto_gptq import AutoGPTQForCausalLM
-from crashlens import WorkloadTracker
-
-tracker = WorkloadTracker("https://your-backend.railway.app")
-
-with tracker.track("Model Quantization"):
-    model = AutoGPTQForCausalLM.from_pretrained(model_name)
-    model.quantize(quantize_config)
-```
-
-## Jupyter Notebook Integration
-
-CrashLens provides enhanced features for Jupyter notebooks with rich HTML displays, magic commands, and inline visualizations.
-
-### Option 1: Enhanced Tracker (Recommended)
-
-```python
-from crashlens.jupyter import JupyterWorkloadTracker
-
-tracker = JupyterWorkloadTracker("https://your-backend.railway.app")
-
-# Track with rich displays
-with tracker.track("Training Model", display_metrics=True):
-    model.fit(X_train, y_train)
-
-# Auto-diagnose failures
-with tracker.track("Risky Operation", auto_diagnose=True):
-    risky_code()
-
-# Manual diagnosis with rich HTML
-diagnosis = tracker.diagnose(workload_id)
-
-# View workload details
-tracker.show_workload(workload_id)
-```
-
-**Features:**
-- ✅ Rich HTML displays (color-coded success/failure)
-- ✅ Inline GPU metrics tables
-- ✅ Formatted AI diagnosis reports
-- ✅ Live progress indicators
-- ✅ Auto-detection of Jupyter environment
-
-### Option 2: IPython Magic Commands
-
-```python
-# Load the extension
-%load_ext crashlens.jupyter
-
-# Initialize once
-%crashlens_init https://your-backend.railway.app
-
-# Track entire cells
-%%crashlens_track "Data Processing"
-data = load_and_process_data()
-features = extract_features(data)
-
-# Diagnose by ID
-%crashlens_diagnose 123
-
-# Show workload details
-%crashlens_show 123
-```
-
-**Available Magic Commands:**
-- `%crashlens_init <api_url>` - Initialize tracker
-- `%%crashlens_track "Job Name"` - Track a cell
-- `%crashlens_diagnose <id>` - Get AI diagnosis
-- `%crashlens_show <id>` - View workload details
-
-### Example Notebooks
-
-Check out the example notebooks in `examples/notebooks/`:
-
-1. **01_quickstart.ipynb** - Basic features and rich displays
-2. **02_magic_commands.ipynb** - IPython magic commands
-3. **03_pytorch_training.ipynb** - PyTorch integration
-
-```bash
-# Launch Jupyter
-cd examples/notebooks
-jupyter notebook
-```
-
-### Jupyter-Specific Features
-
-**Rich HTML Outputs:**
-- Color-coded status badges (green/red/blue)
-- Formatted diagnosis reports
-- Evidence highlighting
-- Fix step numbering
-- Prevention tips
-
-**Inline Metrics:**
-```python
-# Display GPU metrics as pandas DataFrame
-with tracker.track("Training", display_metrics=True):
-    train_model()
-# Automatically shows GPU memory, utilization, temperature
-```
-
-**Auto-Diagnosis:**
-```python
-# Automatically diagnose failures
-with tracker.track("Job", auto_diagnose=True):
-    code_that_might_fail()
-# AI diagnosis appears automatically on failure
-```
-
-## Environment Variables
-
-```bash
-# Optional: Set default API URL
-export CRASHLENS_API_URL="https://your-backend.railway.app"
-```
-
-Then use simplified initialization:
-```python
-import crashlens
-
-crashlens.init()  # Uses CRASHLENS_API_URL
-
-with crashlens.track("Training"):
-    # Your code
-    pass
-```
-
-## Advanced Usage
-
-### Manual Workload Creation
-
-```python
-tracker = WorkloadTracker(api_url)
-workload_id = tracker._create_workload("Custom Job")
-
-try:
-    # Your code
-    train_model()
-    tracker._update_workload(workload_id, "succeeded", runtime_seconds=120)
-except Exception as e:
-    tracker._update_workload(workload_id, "failed", logs=str(e))
-```
-
-### Custom Failure Types
-
-```python
-tracker._update_workload(
-    workload_id,
-    status="failed",
-    failure_type="CUSTOM_MEMORY_LEAK",
-    logs=error_message
+tracker = WorkloadTracker(
+    os.environ["CRASHLENS_URL"],
+    api_key=os.environ["CRASHLENS_API_KEY"],
+    fireworks_api_key=os.environ.get("FIREWORKS_API_KEY"),
+    fireworks_model=os.environ.get("FIREWORKS_MODEL"),
 )
+with tracker.track("Training") as workload_id:
+    train_model()
 ```
 
-## Best Practices
+Context tracking captures output and reports exceptions. The same tracker can
+wrap functions using `@tracker.track_function("Training")`. It uploads live logs,
+runtime, and GPU samples every two seconds (`upload_interval` is configurable),
+then finalizes the run. Logs retain a bounded tail; metrics retain 300 samples.
+Requests have timeouts; reporting failures do not mask training exceptions.
+SIGKILL, kernel failure, and machine loss cannot be reported by the SDK itself.
 
-1. **Use context managers** - Automatic cleanup and error handling
-2. **Add descriptive names** - Makes dashboard navigation easier
-3. **Run diagnosis** - After failures, use AI to get actionable fixes
-4. **Track costs** - Monitor wasted GPU-seconds to optimize
-5. **Integrate early** - Add tracking before production to catch issues
+For a failed run, use `tracker.diagnose(workload_id)` to request a report.
+New AI reports charge the supplied Fireworks account; without credentials user
+workloads receive rules reports. A tool-capable model identifier is required with
+a Fireworks key. Credentials are sent only for diagnosis and never added to
+workload uploads. Saved AI reports are reused by default.
 
-## Support
+NVIDIA NVML provides device-0 memory, utilization, and temperature; PyTorch CUDA
+and ROCm provide device-0 memory. Apple MPS reports process Metal allocations and
+tensor memory relative to the recommended working set, not physical VRAM. MPS
+utilization and temperature are unavailable. Without a supported source there are
+no GPU samples; the SDK does not simulate them. Move the model and tensors onto
+the intended GPU in your training code.
 
-- Dashboard: https://frontend-zeta-eight-92.vercel.app
-- Issues: https://github.com/kavinsaravan/ML-Failure-Doctor/issues
+For enhanced notebook displays use `JupyterWorkloadTracker` with the same
+credentials. See [Jupyter guide](../docs/JUPYTER_INTEGRATION.md) and
+[example notebooks](examples/notebooks/README.md).
+
+Run `scripts/validate_gpu.py` from the repository root for a real hardware and
+live-upload check. See the [main README](../README.md) for deployment, privacy,
+key management, limits, and regression commands.

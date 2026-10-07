@@ -171,7 +171,7 @@ export function createServer({ url, apiKey }) {
   server.registerTool(
     'get_gpu_metrics',
     {
-      description: 'Get GPU memory usage, utilization, and temperature metrics collected during workload execution. Metrics come from the CrashLens SDK (NVIDIA via nvidia-ml-py, memory via torch.cuda on CUDA/ROCm) or are simulated for demo jobs.',
+      description: 'Get GPU memory usage, utilization, and temperature metrics collected during workload execution. Metrics come from the CrashLens SDK (NVIDIA via nvidia-ml-py, memory via torch.cuda on CUDA/ROCm, process Metal allocations via torch.mps on Apple GPUs) or are simulated for demo jobs.',
       inputSchema: z.object({
         workload_id: z.number().int().positive()
       })
@@ -213,6 +213,10 @@ export function createServer({ url, apiKey }) {
           peak_memory_percent: peakMemory.gpu_memory_percent,
           avg_utilization_percent,
           data_points: metrics.length,
+          ...(metrics.some(m => m.source === 'torch.mps') && {
+            memory_scope: 'process', memory_total_basis: 'recommended_working_set',
+            memory_note: 'MPS percentage is relative to a recommended working set, not physical VRAM; peak is sampled.',
+          }),
           ...(peakAllocated && { peak_allocated_mb: Math.max(...metrics.map(m => m.gpu_memory_peak_mb || 0)) })
         };
 

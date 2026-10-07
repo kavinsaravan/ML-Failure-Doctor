@@ -19,9 +19,9 @@ export default function Home() {
               <span className="text-blue-400 text-sm font-semibold">AI-Powered Reliability Platform</span>
             </div>
             <h1 className="text-6xl md:text-7xl font-bold text-white mb-6 leading-tight">
-              Diagnose failed GPU workloads in{' '}
+              Investigate failed GPU workloads with{' '}
               <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                seconds
+                logs and AI
               </span>
             </h1>
             <p className="text-xl text-slate-300 mb-12 leading-relaxed max-w-3xl mx-auto">
@@ -49,10 +49,10 @@ export default function Home() {
                 <Zap className="w-7 h-7 text-white" />
               </div>
               <h3 className="text-xl font-semibold text-white mb-3">
-                Instant Diagnosis
+                Failure Diagnosis
               </h3>
               <p className="text-slate-400 leading-relaxed">
-                AI-powered failure classification with confidence scoring and evidence extraction from logs.
+                Rule-based failure classification and optional AI analysis using your Fireworks account, with evidence from logs.
               </p>
             </div>
 
@@ -61,10 +61,10 @@ export default function Home() {
                 <Shield className="w-7 h-7 text-white" />
               </div>
               <h3 className="text-xl font-semibold text-white mb-3">
-                Universal GPU Support
+                GPU Telemetry
               </h3>
               <p className="text-slate-400 leading-relaxed">
-                Works with NVIDIA (CUDA) and AMD (ROCm) GPUs with automatic detection and platform-specific error diagnosis.
+                Track NVIDIA CUDA, AMD ROCm, and Apple MPS workloads through the SDK. Available metrics depend on the hardware.
               </p>
             </div>
 
@@ -73,10 +73,10 @@ export default function Home() {
                 <TrendingUp className="w-7 h-7 text-white" />
               </div>
               <h3 className="text-xl font-semibold text-white mb-3">
-                Cost Tracking
+                Runtime Estimates
               </h3>
               <p className="text-slate-400 leading-relaxed">
-                Monitor wasted GPU-seconds on failed jobs and optimize resource usage.
+                Review runtime-based estimates for failed workloads alongside their logs and metrics.
               </p>
             </div>
           </div>

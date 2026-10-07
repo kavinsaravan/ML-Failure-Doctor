@@ -1,52 +1,36 @@
-# Deployment and real workloads
+# Deploy CrashLens
 
-1. Copy `.env.example` to `.env` and configure `CRASHLENS_API_KEY`,
-   `APP_ENV=production`, and `ACCESS_MODE=private`.
-2. Set `NEXT_PUBLIC_API_URL` to the backend URL reachable from the browser and
-   `ALLOWED_ORIGINS` to the exact dashboard origin. Rebuild when the public URL changes.
-3. Start with `docker compose up --build -d`. SQLite lives in the named data volume. Run one backend instance per database.
-4. Open the dashboard and enter the API key. It remains in memory until refresh.
-5. Configure SDK and MCP clients with the same key.
+Configure the backend with a private operator CRASHLENS_API_KEY,
+APP_ENV=production, ACCESS_MODE=private, and a persistent DATABASE_PATH. Keep one
+backend process per SQLite database. Preserve the data volume across redeploys;
+it contains keys, ownership, logs, metrics, and reports.
 
-```python
-import os
-from crashlens import WorkloadTracker
+Set frontend NEXT_PUBLIC_API_URL to the public HTTPS backend URL and rebuild.
+Set backend ALLOWED_ORIGINS to the exact frontend origin without a path or trailing
+slash. Never put keys in NEXT_PUBLIC variables. Docker setup is in `.env.example`
+and `docker-compose.yml`; run `docker compose up --build -d`.
 
-tracker = WorkloadTracker(
-    os.environ["CRASHLENS_URL"],
-    api_key=os.environ["CRASHLENS_API_KEY"],
-)
-with tracker.track("Model training"):
-    train_model()
-```
+Users create their own workspaces from the dashboard and save a key once. The
+same key connects their SDK or MCP client. No email/password recovery exists.
+Set ALLOW_WORKSPACE_CREATION=false to use only operator issuance. The operator
+can list, revoke, and replace keys through scripts/manage_keys.py but cannot read
+other owners' workloads. See [access and operations](README.md#access-and-operations).
 
-The SDK uploads current logs, runtime, and GPU samples every two seconds, followed
-by a terminal update. Dashboard pages poll every three seconds. No GPU readings
-are invented by the SDK when no GPU is available. Notebook tracking uses the same
-publisher. Reporting errors do not replace training errors.
+Users supply their own Fireworks credentials and tool-capable model per diagnosis
+request. Missing credentials produce rules reports. Only the operator legacy
+workspace may use backend FIREWORKS_API_KEY/FIREWORKS_MODEL, and both must be
+explicitly configured. New diagnoses may incur charges; saved AI reports are reused.
 
-Set `JOB_CONCURRENCY`, `JOB_QUEUE_SIZE`, and `JOB_TIMEOUT_SECONDS` for server-run
-template jobs. Queue overflow returns 503 with Retry-After; IP throttling returns
-429. On restart, lost server-managed work is marked failed with an interruption
-reason. External SDK jobs remain running and can resume uploading to the restarted
-API. SDK kernel/process kills still need external liveness monitoring.
+External workloads run on user hardware. Apple MPS requires native macOS, while
+CUDA/ROCm require supported GPU hosts. Dashboard template jobs are simulated
+examples executed on the backend. Bound execution using JOB_CONCURRENCY,
+JOB_QUEUE_SIZE, and JOB_TIMEOUT_SECONDS. Restart recovery marks interrupted
+backend-managed jobs failed; external SDK jobs can continue uploading.
 
-Use `TRUSTED_PROXY_CIDRS` only when the actual proxy network is known. Do not trust
-all networks merely to enable forwarded headers. See [access policy](SECURITY.md).
+Set TRUSTED_PROXY_CIDRS only for known proxy networks. Forwarded IPs are otherwise
+ignored. Public creation has global and per-IP limits. This is a prototype with
+no per-user diagnosis quotas and no detection of killed external SDK processes.
 
-Validate containers without modifying the application's data:
-
-```bash
-python3 scripts/docker_smoke.py
-```
-
-On a NVIDIA/AMD host with GPU-compatible PyTorch and the SDK installed:
-
-```bash
-export CRASHLENS_URL=https://your-backend.example
-export CRASHLENS_API_KEY=your-key
-python3 scripts/validate_gpu.py
-```
-
-The hardware test runs a small training loop and requires real GPU readings to
-reach the API before completion. It refuses CPU fallback and simulated readings.
+Validation commands and limitations are in [README](README.md#validation).
+Run scripts/docker_smoke.py for disposable container checks and
+scripts/validate_gpu.py on a supported GPU host for real training/live telemetry.

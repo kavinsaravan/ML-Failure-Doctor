@@ -1,78 +1,26 @@
-# CrashLens Examples
+# Example notebooks
 
-This directory contains example notebooks and scripts demonstrating CrashLens functionality.
+Create a private workspace in the dashboard first. Notebook configuration prompts
+for the reachable backend URL and your saved CrashLens key. Optional Fireworks
+credentials enable AI diagnoses billed to your account; otherwise reports use rules.
+Keys are never included in saved notebook source or outputs. Clear any output that
+your own code prints before sharing a notebook.
 
-## End-to-End Test (Google Colab)
+- Root CrashLens_Demo.ipynb: small real CUDA training and controlled failures.
+- examples/CrashLens_E2E_Test.ipynb: CUDA training, an oversized allocation failure,
+  a missing dependency, and authenticated workload listing.
+- SDK 01_quickstart.ipynb: real CPU computation and a missing-file failure.
+- SDK 02_magic_commands.ipynb: tracked IPython cells and an actual import failure.
+- SDK 03_pytorch_training.ipynb: small training on CUDA/ROCm, MPS, or CPU, with
+  device selection printed explicitly.
 
-**File:** `CrashLens_E2E_Test.ipynb`
+Installation uses the Git repository; the package is not claimed to be published
+on PyPI. CUDA tests require a GPU runtime. CPU runs do not validate GPU support.
+OOM examples attempt one allocation larger than total CUDA memory rather than
+consuming memory in an unbounded loop. Failed allocations may leave sampled usage
+low. Training uses generated data, so these are functional tests, not evidence of
+production scale or measured diagnosis accuracy.
 
-**Purpose:** Real-world test with actual CUDA/PyTorch GPU workloads
-
-**Features:**
-- ✅ Successful training test
-- ❌ GPU Out of Memory test (intentional failure)
-- ❌ Dependency error test (intentional failure)
-- 🔍 AI diagnosis demonstration
-- 📊 Dashboard verification
-
-**How to Run:**
-
-### Option 1: Google Colab (Recommended)
-1. Upload `CrashLens_E2E_Test.ipynb` to Google Colab
-2. Enable GPU runtime: Runtime → Change runtime type → GPU (T4)
-3. Set your backend URL in the notebook config cell
-4. Run all cells
-5. Check your CrashLens dashboard for results
-
-### Option 2: Local Jupyter (Requires GPU)
-```bash
-# Install dependencies
-pip install jupyter torch torchvision requests
-
-# Start Jupyter
-jupyter notebook examples/CrashLens_E2E_Test.ipynb
-```
-
-**Expected Results:**
-- Workload 1: ✅ Successful training
-- Workload 2: ❌ Failed with `CUDA out of memory` (correctly diagnosed as `GPU_OUT_OF_MEMORY`)
-- Workload 3: ❌ Failed with `ModuleNotFoundError` (correctly diagnosed as `DEPENDENCY_ERROR`)
-
-## Requirements
-
-- GPU runtime (CUDA or ROCm)
-- CrashLens backend deployed and accessible
-- Python 3.8+
-- PyTorch with GPU support
-- `requests` library
-
-## Configuration
-
-Before running, update these variables in the notebook:
-
-```python
-BACKEND_URL = "https://your-backend.railway.app"  # Your deployed backend
-API_KEY = "your_api_key"  # If backend requires authentication
-```
-
-## Troubleshooting
-
-**No GPU available:**
-- In Colab: Runtime → Change runtime type → GPU
-- Locally: Ensure CUDA/ROCm drivers are installed
-
-**Connection refused:**
-- Verify backend URL is correct
-- Check backend is running: `curl https://your-backend.railway.app/health`
-
-**401 Unauthorized:**
-- Set `API_KEY` if your backend requires authentication
-- Check API key is correct in backend environment variables
-
-## Next Steps
-
-After running the E2E test:
-1. Check the CrashLens dashboard to see all workloads
-2. Review AI diagnosis for failed workloads
-3. Inspect GPU metrics collected during execution
-4. Try tracking your own ML training jobs
+Run cells in order, use the workload IDs returned by your runs, and inspect their
+reports in your own dashboard. For a strict hardware check use
+scripts/validate_gpu.py from the repository root. See the main README for details.
