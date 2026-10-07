@@ -1,49 +1,473 @@
 # CrashLens Python SDK
 
-Install from a checkout with `python -m pip install -e ./crashlens-sdk`.
-Extras: `gpu` adds NVIDIA NVML, `jupyter` adds notebook dependencies, and `all`
-includes both. Install GPU-compatible PyTorch separately for CUDA/ROCm/MPS.
+Track your GPU workloads, capture failures automatically, and get AI-powered diagnosis when things go wrong.
 
-Create a workspace in the dashboard and save its key. Use credentials from
-secure prompts or environment variables, not notebook source:
+## What This Does
+
+The CrashLens SDK wraps your ML training code to:
+
+- **Capture logs and errors** automatically when your job fails
+- **Collect GPU metrics** (memory, utilization, temperature) during execution
+- **Upload live telemetry** to the CrashLens backend every 2 seconds
+- **Request AI diagnosis** for failures with root cause analysis and fixes
+- **Support Jupyter notebooks** with rich HTML displays and magic commands
+
+## Installation
+
+### Basic Installation
+
+```bash
+pip install -e ./crashlens-sdk
+```
+
+### With Extras
+
+Install optional dependencies based on your needs:
+
+```bash
+# For NVIDIA GPU metrics (nvidia-ml-py)
+pip install -e "./crashlens-sdk[gpu]"
+
+# For Jupyter notebook support
+pip install -e "./crashlens-sdk[jupyter]"
+
+# For everything
+pip install -e "./crashlens-sdk[all]"
+```
+
+**Note:** Install PyTorch separately for your GPU platform (CUDA/ROCm/MPS):
+```bash
+# Example for CUDA
+pip install torch torchvision torchaudio
+
+# Example for Apple Silicon
+pip install torch torchvision torchaudio
+```
+
+## Quick Start
+
+### 1. Get Your API Key
+
+1. Go to the CrashLens dashboard
+2. Create a workspace or connect to an existing one
+3. Save your API key securely
+
+### 2. Set Environment Variables
+
+**Never hardcode credentials in your code!** Use environment variables:
+
+```bash
+export CRASHLENS_URL="https://your-backend.railway.app"
+export CRASHLENS_API_KEY="cl_your_api_key_here"
+```
+
+### 3. Track Your Training Code
 
 ```python
 import os
 from crashlens import WorkloadTracker
+
+# Initialize tracker with your credentials
+tracker = WorkloadTracker(
+    os.environ["CRASHLENS_URL"],
+    api_key=os.environ["CRASHLENS_API_KEY"]
+)
+
+# Wrap your training code
+with tracker.track("BERT Fine-tuning") as workload_id:
+    model = train_bert_model()
+    evaluate(model)
+
+print(f"Workload ID: {workload_id}")
+```
+
+That's it! If your training fails, the SDK automatically:
+- Captures the error traceback
+- Uploads all logs and GPU metrics
+- Marks the workload as failed
+- Makes it available for diagnosis in the dashboard
+
+## How It Works
+
+### Context Manager (`with tracker.track()`)
+
+The SDK uses Python context managers to wrap your code:
+
+```python
+with tracker.track("Job Name") as workload_id:
+    # Your code here
+    train_model()
+```
+
+**What happens:**
+1. Creates a new workload in the backend
+2. Redirects stdout/stderr to capture logs
+3. Starts GPU metrics collection (every 2 seconds)
+4. Uploads live telemetry while your code runs
+5. On success: marks workload as succeeded
+6. On failure: captures exception, marks as failed
+7. Always: restores stdout/stderr and uploads final state
+
+### Function Decorator (`@tracker.track_function()`)
+
+You can also track functions using a decorator:
+
+```python
+@tracker.track_function("Training Run")
+def train_model():
+    model = MyModel()
+    train(model)
+    return model
+
+# Automatically tracked when called
+model = train_model()
+```
+
+### Live Telemetry Streaming
+
+By default, the SDK uploads logs and metrics every 2 seconds:
+
+```python
+tracker = WorkloadTracker(
+    url,
+    api_key=key,
+    upload_interval=5  # Upload every 5 seconds instead
+)
+```
+
+**What's uploaded:**
+- **Logs**: Last 256KB of stdout/stderr (rolling buffer)
+- **Metrics**: Last 300 GPU samples (10 minutes at 2-second intervals)
+- **Runtime**: Elapsed seconds since job started
+
+This allows you to monitor progress in the dashboard while the job is still running.
+
+## GPU Metrics Collection
+
+The SDK automatically detects your GPU platform and collects appropriate metrics:
+
+### NVIDIA GPUs (via NVML)
+
+If `nvidia-ml-py` is installed:
+- **Memory**: Used MB, Total MB, Percentage
+- **Utilization**: GPU compute utilization %
+- **Temperature**: Celsius
+
+### NVIDIA/AMD GPUs (via PyTorch)
+
+Fallback if NVML unavailable:
+- **Memory**: Allocated MB, Reserved MB, Total MB (device 0)
+- Works with both `torch.cuda` (NVIDIA) and ROCm (AMD)
+
+### Apple Silicon (via MPS)
+
+For M1/M2/M3 Macs with `torch.mps`:
+- **Driver Memory**: Metal driver allocation
+- **Tensor Memory**: Actual PyTorch tensor allocation
+- **Working Set**: Apple's recommended maximum (not physical VRAM)
+- **Percentage**: Relative to working set (can exceed 100%)
+
+**Note**: MPS utilization and temperature are unavailable (API limitation)
+
+### No GPU / Simulation
+
+If no supported GPU is detected:
+- **No metrics are collected**
+- The SDK does NOT simulate fake metrics
+- Workload tracking still works (logs, errors, runtime)
+
+## AI-Powered Diagnosis
+
+### Using Your Own Fireworks AI Account (BYOK)
+
+Provide your Fireworks credentials to get AI diagnosis:
+
+```python
 tracker = WorkloadTracker(
     os.environ["CRASHLENS_URL"],
     api_key=os.environ["CRASHLENS_API_KEY"],
     fireworks_api_key=os.environ.get("FIREWORKS_API_KEY"),
-    fireworks_model=os.environ.get("FIREWORKS_MODEL"),
+    fireworks_model=os.environ.get("FIREWORKS_MODEL")
 )
+
+# After a failure
+tracker.diagnose(workload_id)
+```
+
+**How it works:**
+- Your Fireworks credentials are sent only during diagnosis requests
+- Never stored in the backend database
+- Never included in workload uploads
+- You pay for AI diagnosis (not the operator)
+- Requires a tool-capable Fireworks model (e.g., `accounts/fireworks/models/llama-v3p3-70b-instruct`)
+
+### Without Fireworks Credentials
+
+If you don't provide Fireworks credentials:
+- You get **rule-based diagnosis** (heuristic pattern matching)
+- No AI analysis, but still useful failure classification
+- Free (no API costs)
+
+### Diagnosis Report Format
+
+```python
+report = tracker.diagnose(workload_id)
+print(report["root_cause"])
+print(report["recommended_fix"])
+print(report["evidence"])
+print(report["safe_to_retry"])
+```
+
+**Report includes:**
+- **Root Cause**: What went wrong
+- **Recommended Fix**: How to fix it
+- **Evidence**: Log excerpts supporting the diagnosis
+- **Safe to Retry**: Whether re-running might succeed
+- **Prevention**: How to avoid this in the future
+
+Reports are cached - calling `diagnose()` again returns the saved report without re-running AI.
+
+## Jupyter Notebook Support
+
+For enhanced notebook displays, use `JupyterWorkloadTracker`:
+
+```python
+from crashlens import JupyterWorkloadTracker
+
+tracker = JupyterWorkloadTracker(
+    os.environ["CRASHLENS_URL"],
+    api_key=os.environ["CRASHLENS_API_KEY"]
+)
+
 with tracker.track("Training") as workload_id:
     train_model()
 ```
 
-Context tracking captures output and reports exceptions. The same tracker can
-wrap functions using `@tracker.track_function("Training")`. It uploads live logs,
-runtime, and GPU samples every two seconds (`upload_interval` is configurable),
-then finalizes the run. Logs retain a bounded tail; metrics retain 300 samples.
-Requests have timeouts; reporting failures do not mask training exceptions.
-SIGKILL, kernel failure, and machine loss cannot be reported by the SDK itself.
+**Features:**
+- Color-coded status displays (✓ success, ✗ failure)
+- Rich HTML formatted diagnosis reports
+- GPU metrics displayed as pandas DataFrames
+- Inline error messages with styling
+- Auto-diagnosis on failure
 
-For a failed run, use `tracker.diagnose(workload_id)` to request a report.
-New AI reports charge the supplied Fireworks account; without credentials user
-workloads receive rules reports. A tool-capable model identifier is required with
-a Fireworks key. Credentials are sent only for diagnosis and never added to
-workload uploads. Saved AI reports are reused by default.
+### Magic Commands
 
-NVIDIA NVML provides device-0 memory, utilization, and temperature; PyTorch CUDA
-and ROCm provide device-0 memory. Apple MPS reports process Metal allocations and
-tensor memory relative to the recommended working set, not physical VRAM. MPS
-utilization and temperature are unavailable. Without a supported source there are
-no GPU samples; the SDK does not simulate them. Move the model and tensors onto
-the intended GPU in your training code.
+Load the extension for even easier tracking:
 
-For enhanced notebook displays use `JupyterWorkloadTracker` with the same
-credentials. See [Jupyter guide](../docs/JUPYTER_INTEGRATION.md) and
-[example notebooks](examples/notebooks/README.md).
+```python
+%load_ext crashlens
+%crashlens_init https://your-backend.railway.app
+```
 
-Run `scripts/validate_gpu.py` from the repository root for a real hardware and
-live-upload check. See the [main README](../README.md) for deployment, privacy,
-key management, limits, and regression commands.
+Then use magic commands:
+
+```python
+%%crashlens_track "Training Job"
+model = train_model()
+evaluate(model)
+```
+
+See [Jupyter Integration Guide](../docs/JUPYTER_INTEGRATION.md) for detailed usage and examples.
+
+## Error Handling
+
+The SDK is designed to never break your training:
+
+### Exception Handling
+
+```python
+with tracker.track("Training"):
+    raise ValueError("My model broke!")
+# Exception is captured, workload marked as failed, then re-raised
+```
+
+The original exception always propagates - the SDK never swallows errors.
+
+### Network Failures
+
+```python
+# If backend is unreachable during upload:
+# - Logs warning to stderr
+# - Continues training anyway
+# - Tries to upload at next interval
+```
+
+Network errors never crash your training loop.
+
+### GPU Collection Errors
+
+```python
+# If GPU metrics collection fails:
+# - Returns None (no samples)
+# - Logs warning
+# - Continues without metrics
+# - Training is unaffected
+```
+
+## Configuration Reference
+
+### WorkloadTracker Parameters
+
+```python
+tracker = WorkloadTracker(
+    base_url: str,                      # Backend URL (required)
+    api_key: str = None,                # Your API key (required if backend has auth)
+    fireworks_api_key: str = None,      # Fireworks AI key (optional, for BYOK)
+    fireworks_model: str = None,        # Fireworks model ID (required with fireworks_api_key)
+    upload_interval: float = 2.0,       # Seconds between live uploads
+    request_timeout: float = 10.0       # HTTP request timeout
+)
+```
+
+### Context Manager Methods
+
+```python
+# Track a code block
+with tracker.track(name: str) as workload_id:
+    ...
+
+# Track a function
+@tracker.track_function(name: str)
+def my_function():
+    ...
+
+# Diagnose a failure
+report = tracker.diagnose(
+    workload_id: int,
+    refresh: bool = False  # Force new AI diagnosis even if cached
+)
+```
+
+## Validation & Testing
+
+### Validate Your GPU Setup
+
+Run the validation script to test GPU detection and live uploads:
+
+```bash
+# From repository root
+python scripts/validate_gpu.py
+```
+
+This will:
+- Detect your GPU platform (NVIDIA/AMD/MPS)
+- Show available metrics
+- Perform a test upload to your backend
+- Verify authentication works
+
+### Run SDK Tests
+
+```bash
+cd crashlens-sdk
+pytest tests/
+```
+
+Tests cover:
+- Metric collection for all GPU platforms
+- Live telemetry streaming
+- Error handling and exception propagation
+- Jupyter magic commands
+- BYOK credential forwarding
+
+## Common Issues
+
+### "No GPU metrics recorded"
+
+**Causes:**
+- No supported GPU detected
+- PyTorch not installed or not GPU-enabled
+- GPU not initialized (model/tensors not on GPU)
+
+**Solutions:**
+- Install PyTorch with GPU support
+- Move your model to GPU: `model.to('cuda')` or `model.to('mps')`
+- Check `torch.cuda.is_available()` or `torch.mps.is_available()`
+- Run `scripts/validate_gpu.py` to diagnose
+
+### "Authentication failed" errors
+
+**Causes:**
+- API key not set or incorrect
+- Backend requires authentication but no key provided
+- Key has been revoked
+
+**Solutions:**
+- Set `CRASHLENS_API_KEY` environment variable
+- Verify key in dashboard
+- Create a new workspace if key was revoked
+
+### MPS metrics show >100%
+
+**This is normal!** MPS reports memory relative to the "recommended working set", not physical VRAM. If you exceed the recommended limit, percentage > 100% warns you might hit system memory pressure.
+
+### Logs not appearing in dashboard
+
+**Causes:**
+- Network issues preventing uploads
+- Upload interval too long
+- Job finished before first upload
+
+**Solutions:**
+- Check network connectivity
+- Reduce `upload_interval` to 1-2 seconds
+- Check backend logs for upload errors
+
+## Architecture
+
+```
+Your Training Code
+       ↓
+WorkloadTracker Context Manager
+       ↓
+┌──────────────────────────────────────┐
+│ 1. Capture stdout/stderr             │
+│ 2. Start GPU metrics collection      │
+│ 3. Upload every N seconds            │
+│ 4. Handle exceptions                 │
+│ 5. Mark success/failure              │
+│ 6. Restore stdout/stderr             │
+└──────────────────────────────────────┘
+       ↓
+CrashLens Backend (REST API)
+       ↓
+Dashboard (view workload, diagnose)
+```
+
+## Resource Limits
+
+To prevent unbounded memory growth:
+
+- **Logs**: Last 256KB kept (rolling buffer)
+- **Metrics**: Last 300 samples kept (10 minutes at 2-second intervals)
+- **Upload Timeout**: 10 seconds per request (configurable)
+
+## Security Best Practices
+
+1. **Never hardcode credentials** in notebooks or scripts
+2. **Use environment variables** or secure prompts
+3. **Don't commit `.env` files** to git
+4. **Revoke compromised keys** immediately in dashboard
+5. **Use HTTPS** for backend URL in production
+
+## Examples
+
+See [example notebooks](examples/notebooks/README.md) for:
+- Basic workload tracking
+- Jupyter magic commands
+- PyTorch training integration
+- Error handling patterns
+- BYOK diagnosis
+
+## Related Documentation
+
+- [Root README](../README.md) - Full CrashLens overview
+- [Jupyter Integration](../docs/JUPYTER_INTEGRATION.md) - Notebook features
+- [Frontend](../frontend/README.md) - Dashboard usage
+- [MCP Server](../mcp-server/README.md) - Claude Desktop integration
+
+## Support
+
+For issues or questions:
+- Check [GitHub Issues](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
+- Review example notebooks
+- Run `scripts/validate_gpu.py` for diagnostics
