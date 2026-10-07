@@ -14,10 +14,20 @@ The CrashLens SDK wraps your ML training code to:
 
 ## Installation
 
-### Basic Installation
+### From a Cloned Repository
+
+If you have the repository checked out locally:
 
 ```bash
 pip install -e ./crashlens-sdk
+```
+
+### Direct from GitHub
+
+Without cloning:
+
+```bash
+pip install git+https://github.com/kavinsaravan/ML-Failure-Doctor.git#subdirectory=crashlens-sdk
 ```
 
 ### With Extras
@@ -35,14 +45,9 @@ pip install -e "./crashlens-sdk[jupyter]"
 pip install -e "./crashlens-sdk[all]"
 ```
 
-**Note:** Install PyTorch separately for your GPU platform (CUDA/ROCm/MPS):
-```bash
-# Example for CUDA
-pip install torch torchvision torchaudio
+### PyTorch Setup
 
-# Example for Apple Silicon
-pip install torch torchvision torchaudio
-```
+Install PyTorch separately for your GPU platform. Use the [official installation selector](https://pytorch.org/get-started/locally/) to get the right command for your CUDA/ROCm environment.
 
 ## Quick Start
 
@@ -216,14 +221,20 @@ print(report["root_cause"])
 print(report["recommended_fix"])
 print(report["evidence"])
 print(report["safe_to_retry"])
+print(report["confidence"])
+print(report["source"])
 ```
 
-**Report includes:**
-- **Root Cause**: What went wrong
-- **Recommended Fix**: How to fix it
-- **Evidence**: Log excerpts supporting the diagnosis
-- **Safe to Retry**: Whether re-running might succeed
-- **Prevention**: How to avoid this in the future
+**Report fields:**
+- **root_cause**: What went wrong
+- **recommended_fix**: How to fix it
+- **evidence**: Log excerpts supporting the diagnosis
+- **safe_to_retry**: Whether re-running *without changes* might succeed (e.g., transient network errors)
+- **prevention**: How to avoid this in the future
+- **confidence**: Heuristic score (0.0-1.0) indicating diagnosis confidence
+- **source**: Diagnosis method used (`"ai"` or `"rule_based"`)
+- **confidence_basis**: Explanation of why this confidence score was assigned
+- **ai_unavailable_reason**: (Only if AI diagnosis failed) Why rule-based fallback was used
 
 ## Jupyter Notebook Support
 
@@ -334,7 +345,7 @@ report = tracker.diagnose(workload_id)
 
 ### Validate Your GPU Setup
 
-Run the validation script to test GPU detection and live uploads:
+Run the validation script to test GPU detection and live uploads. The script performs ten seconds of actual training and requires real telemetry to reach the API while running - it doesn't just test detection/upload or print available metrics:
 
 ```bash
 # From repository root
@@ -349,18 +360,30 @@ This will:
 
 ### Run SDK Tests
 
+The SDK tests can run if `pytest` is installed, but it isn't included. Run using the existing `unittest` command:
+
 ```bash
 cd crashlens-sdk
-pytest tests/
+python -m unittest discover tests/
 ```
 
 Tests cover:
-- Metric collection for all GPU platforms
+- Metric collection for all GPU platforms (with mocked collectors to distinguish from real hardware validation)
 - Live telemetry streaming
 - Error handling and exception propagation
 - Jupyter magic commands
 - BYOK credential forwarding
 
+
+## SDK Limitations
+
+The SDK cannot capture failures in certain scenarios:
+
+- **SIGKILL (kill -9)**: Process is terminated immediately without cleanup - no error can be reported
+- **Notebook kernel crashes**: If the Jupyter kernel dies, the SDK context manager cannot execute cleanup code
+- **Machine loss**: If the entire machine shuts down or becomes unreachable, the SDK cannot upload final state
+
+In these cases, the workload will remain in `running` status in the dashboard. The last successfully uploaded telemetry snapshot will be available, but there will be no error traceback.
 
 ## Architecture
 
