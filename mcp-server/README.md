@@ -165,24 +165,6 @@ All tests use mocked network calls and verify:
 └─────────────────┘
 ```
 
-## Error Handling
-
-All tools return structured errors via `isError: true` with specific messages:
-- **404 errors**: "Workload 42 not found"
-- **401/403 errors**: "Authentication failed. Check CRASHLENS_API_KEY environment variable."
-- **Network errors**: "Request timeout after 10 seconds" or "Network error: ..."
-- **Validation errors**: Automatically handled by Zod schemas
-
-The server never crashes on individual tool failures and continues serving subsequent requests.
-
-## Implementation Notes
-
-- Uses Node 18+ built-in `fetch` with 10-second timeouts
-- All logging goes to stderr; stdout is reserved for MCP protocol
-- JSON-encoded fields (gpu_metrics, failure_report, checkpoint_state) are parsed safely
-- GPU metrics are downsampled to 300 points if the response contains more
-- Workload logs can be tailed to limit response size (default: last 200 lines)
-
 ## Docker
 
 From the repository root, start the API and build the optional MCP image:
