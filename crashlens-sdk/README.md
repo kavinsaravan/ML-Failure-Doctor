@@ -276,7 +276,6 @@ model = train_model()
 evaluate(model)
 ```
 
-See [Jupyter Integration Guide](../docs/JUPYTER_INTEGRATION.md) for detailed usage and examples.
 
 ## Error Handling
 

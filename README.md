@@ -43,7 +43,7 @@ CrashLens provides first-class support for Jupyter notebooks:
 - **Inline Metrics**: GPU metrics displayed as pandas DataFrames
 - **Auto-Diagnosis**: Automatically diagnose failures in tracked cells
 
-See [Jupyter Integration Guide](./docs/JUPYTER_INTEGRATION.md) for detailed usage.
+See [Jupyter Notebook Support](./crashlens-sdk/README.md#jupyter-notebook-support) for usage.
 
 ###  Model Context Protocol (MCP) Integration
 CrashLens provides an optional MCP server that lets Claude Desktop and other MCP clients query workload data via 7 standardized tools:
