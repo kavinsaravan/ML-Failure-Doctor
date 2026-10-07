@@ -224,33 +224,6 @@ Displays full details for a workload (logs, metrics, status).
 %crashlens_show wl_abc123def456
 ```
 
-## Security Best Practices
-
-### ✅ Do This
-
-```python
-import os
-from crashlens.jupyter import JupyterWorkloadTracker
-
-# Read from environment variables
-tracker = JupyterWorkloadTracker(
-    os.environ["CRASHLENS_URL"],
-    api_key=os.environ["CRASHLENS_API_KEY"]
-)
-```
-
-### ❌ Don't Do This
-
-```python
-# NEVER hardcode credentials!
-tracker = JupyterWorkloadTracker(
-    "https://backend.railway.app",
-    api_key="cl_actual_key_here"  # This will be saved in notebook history!
-)
-```
-
-**Why?** Jupyter notebooks save all cell outputs and inputs in `.ipynb` files. Hardcoded credentials will be committed to version control and visible to anyone with access to the notebook.
-
 ## Limitations
 
 The SDK cannot capture failures in certain scenarios:
@@ -319,48 +292,3 @@ with tracker.track("Quick Test", display_metrics=True) as workload_id:
 
 # Metrics table appears after completion
 ```
-
-## Troubleshooting
-
-### "Module not found: crashlens.jupyter"
-
-Make sure you installed the Jupyter extras:
-
-```bash
-pip install -e './crashlens-sdk[jupyter]'
-```
-
-### "CRASHLENS_API_KEY not found"
-
-Set environment variables before starting Jupyter:
-
-```bash
-export CRASHLENS_API_KEY="cl_your_key"
-jupyter notebook
-```
-
-Or use `getpass` inside the notebook for secure input.
-
-### GPU Metrics Show "No metrics available"
-
-This is normal if:
-- You're running on a machine without a GPU
-- PyTorch is not installed
-- Your GPU platform is not supported (NVIDIA, AMD ROCm, or Apple MPS only)
-
-The SDK never invents fake metrics. Workload tracking still works without GPU data.
-
-### Auto-Diagnosis Returns Rule-Based Report
-
-If you expected AI-powered diagnosis but got rule-based instead:
-- Check that `FIREWORKS_API_KEY` and `FIREWORKS_MODEL` are set
-- Verify your Fireworks account has credits
-- Ensure the model supports tool calling (e.g., `llama-v3p3-70b-instruct`)
-
-Check the `ai_unavailable_reason` field in the report for details.
-
-## Related Documentation
-
-- [SDK README](../crashlens-sdk/README.md) - Core SDK documentation
-- [GPU Metrics Collection](../crashlens-sdk/README.md#gpu-metrics-collection) - Platform-specific metrics details
-- [AI-Powered Diagnosis](../crashlens-sdk/README.md#ai-powered-diagnosis) - BYOK setup and diagnosis options
