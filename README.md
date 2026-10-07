@@ -1,6 +1,5 @@
 # 🔍 CrashLens - AI-Powered GPU Workload Failure Diagnosis
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![NVIDIA CUDA](https://img.shields.io/badge/NVIDIA-CUDA-76B900.svg)
 ![AMD ROCm](https://img.shields.io/badge/AMD-ROCm-red.svg)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)
