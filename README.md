@@ -15,8 +15,8 @@
 **The Problem:** ML engineers spend hours debugging GPU failures—deciphering cryptic CUDA/HIP errors, analyzing memory dumps, and manually correlating logs with metrics.
 
 **The Solution:** CrashLens diagnoses GPU workload failures in **seconds**, not hours:
--  **AI-Powered Diagnosis** - Gemma model analyzes logs and provides actionable fixes
--  **Universal GPU Support** - Works with NVIDIA (nvidia-smi), AMD (rocm-smi), and cloud platforms
+-  **AI-Powered Diagnosis** - Fireworks AI user-selected model analyzes logs and provides actionable fixes
+-  **Universal GPU Support** - Works with NVIDIA CUDA, AMD (rocm-smi), MPS SDK, and cloud platforms
 -  **Real-time Metrics** - Live GPU memory, utilization, and temperature monitoring
 -  **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
 -  **Containerized Prototype** - Docker setup for reproducible demos
@@ -27,15 +27,14 @@
 
 ###  GPU Workload Diagnosis
 - **Automatic Failure Classification**: GPU OOM, missing checkpoints, dependency errors, data path errors, timeouts, CUDA/ROCm runtime errors
-- **AI-Powered Doctor**: Gemma-powered diagnosis via Fireworks AI providing:
+- **AI-Powered Doctor**: AI-powered diagnosis via Fireworks AI providing:
   - Root cause analysis
   - Evidence extraction from logs
   - Recommended fixes with retry safety assessment
   - Prevention strategies
 - **Universal GPU Support**: Auto-detects NVIDIA (nvidia-smi) or AMD (rocm-smi) GPUs
-- **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring
+- **Real-time Metrics**: Live GPU memory, utilization, temperature monitoring, and automatic calculation of wasted GPU-seconds
   - *Note: Demo jobs use real NVIDIA/ROCm metrics when available, otherwise explicitly tagged simulated metrics. Workloads tracked with the SDK record live GPU memory (NVIDIA and ROCm), plus utilization and temperature on NVIDIA when `nvidia-ml-py` is installed.*
-- **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
 
 ###  Jupyter Notebook Integration
 CrashLens provides first-class support for Jupyter notebooks:
@@ -43,7 +42,6 @@ CrashLens provides first-class support for Jupyter notebooks:
 - **Rich HTML Displays**: Color-coded status, formatted diagnosis reports
 - **Inline Metrics**: GPU metrics displayed as pandas DataFrames
 - **Auto-Diagnosis**: Automatically diagnose failures in tracked cells
-- **Live Progress**: Real-time workload status indicators
 
 See [Jupyter Integration Guide](./docs/JUPYTER_INTEGRATION.md) for detailed usage.
 
@@ -51,15 +49,15 @@ See [Jupyter Integration Guide](./docs/JUPYTER_INTEGRATION.md) for detailed usag
 CrashLens provides an optional MCP server that lets Claude Desktop and other MCP clients query workload data via 7 standardized tools:
 - `get_workload_logs` - Retrieve execution logs and error traces
 - `get_gpu_metrics` - Access GPU memory, utilization, temperature data
-- `get_failure_report` - Get AI-generated diagnosis reports (created by the backend's Gemma 2 integration)
+- `get_failure_report` - Get AI-generated diagnosis reports
 - `get_checkpoint_state` - View checkpoint availability
-- `get_wasted_gpu_time` - Calculate failure cost impact
+- `get_wasted_gpu_time` - Calculate wasted GPU time
 - `list_failed_workloads` - Query failed workloads with filters
 - `get_workload_summary` - Get complete workload metadata
 
 **Two separate AI integration paths:**
-1. **Backend AI Diagnosis (Gemma 2)**: When you call `POST /workloads/{id}/diagnose`, the Go backend sends logs and metrics directly to Gemma 2 via Fireworks AI (configured with `FIREWORKS_API_KEY` and `FIREWORKS_MODEL`). This produces the failure reports stored in the database.
-2. **MCP Client Queries**: External tools like Claude Desktop can use the MCP server to retrieve these reports and other workload data. The MCP server calls the CrashLens REST API; it does not invoke Gemma directly.
+1. **Backend AI Diagnosis**: When you call `POST /workloads/{id}/diagnose`, the Go backend sends logs and metrics directly to Fireworks AI (configured with `FIREWORKS_API_KEY` and `FIREWORKS_MODEL`). This produces the failure reports stored in the database.
+2. **MCP Client Queries**: External tools like Claude Desktop can use the MCP server to retrieve these reports and other workload data. The MCP server calls the CrashLens REST API.
 
 See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed tool specifications.
 
@@ -87,7 +85,7 @@ See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed to
                   │
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│            Gemma AI (via Fireworks AI)                      │
+│             Fireworks AI model                              │
 │        (Root cause + Fixes + Prevention)                    │
 └─────────────────┬───────────────────────────────────────────┘
                   │
@@ -158,7 +156,7 @@ ML-Failure-Doctor/
 | **Frontend** | Next.js 16, React, TypeScript, Tailwind CSS | Modern, responsive dashboard |
 | **Backend** | Go 1.26, Gorilla Mux | High-performance REST API |
 | **Database** | SQLite | Lightweight, embedded persistence |
-| **AI Model** | Gemma via Fireworks AI | Intelligent failure diagnosis |
+| **AI Model** | Fireworks AI | Intelligent failure diagnosis |
 | **GPU Platform** | **NVIDIA CUDA / AMD ROCm** | Universal GPU metrics collection |
 | **Visualization** | Recharts | GPU metrics and performance charts |
 | **Containerization** | Docker, Docker Compose | Containerized deployment |
