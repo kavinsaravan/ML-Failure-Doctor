@@ -471,3 +471,21 @@ account. The operator key can still use backend FIREWORKS_API_KEY/FIREWORKS_MODE
 for the legacy workspace. Saved AI reports are reused; Re-run Diagnosis makes a
 fresh request with the supplied credentials. Jupyter magic initialization reads
 Fireworks credentials from environment variables, never magic-line arguments.
+
+## Self-service workspaces
+
+New visitors open the dashboard and select **Create my workspace**. They enter a
+workspace label, receive a randomly generated CrashLens key once, and connect
+immediately. The key identifies a new private owner; it cannot claim an existing
+workspace or grant operator privileges. Save it to reconnect after a refresh and
+use it in the SDK. Anyone with the key shares the workspace. There is no email,
+password, or self-service recovery. Labels are descriptive and not identities.
+
+Public `POST /workspaces` accepts only `{ "name": "My workspace" }`. Secrets
+remain hashed in the database and are never listed later. Creation is limited to
+3 requests/minute per IP (burst 1) and 10/minute globally (burst 5), per backend
+process. Forwarded IPs require explicit trusted proxy configuration. Set
+`ALLOW_WORKSPACE_CREATION=false` to disable public creation while retaining
+operator issuance and existing keys. Run one backend process per SQLite database.
+Users supply their own Fireworks credentials; creation makes no paid AI calls.
+The database volume must persist keys and workload ownership across deployments.

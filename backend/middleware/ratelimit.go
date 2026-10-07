@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"golang.org/x/time/rate"
+	"math"
 	"net"
 	"net/http"
 	"net/netip"
@@ -107,7 +108,7 @@ func (rl *IPRateLimiter) Middleware(next http.Handler) http.Handler {
 		allowed := entry.limiter.Allow()
 		rl.mu.Unlock()
 		if !allowed {
-			w.Header().Set("Retry-After", "6")
+			w.Header().Set("Retry-After", fmt.Sprint(int(math.Ceil(1/float64(rl.rate)))))
 			http.Error(w, "Rate limit exceeded. Try again later.", http.StatusTooManyRequests)
 			return
 		}

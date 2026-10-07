@@ -35,3 +35,18 @@ test('Fireworks credentials are diagnosis-only and cleared on workspace change',
     assert.equal(requests.at(-1).options.headers['X-Fireworks-API-Key'],undefined);
   } finally { globalThis.fetch=originalFetch; api.setAPIKey(''); api.clearFireworksCredentials(); }
 });
+
+
+test('workspace creation sends no existing credentials', async () => {
+  const originalFetch=globalThis.fetch;
+  let captured;
+  try {
+    api.setAPIKey('operator'); api.setFireworksCredentials('secret','model');
+    globalThis.fetch=async (url,options) => { captured={url,options}; return new Response('{"api_key":"new-key","owner_id":"new-owner","name":"Alice"}',{status:201}); };
+    const result=await api.createWorkspace('Alice');
+    assert.equal(result.api_key,'new-key');
+    assert.equal(captured.options.headers.Authorization,undefined);
+    assert.equal(captured.options.headers['X-Fireworks-API-Key'],undefined);
+    assert.deepEqual(JSON.parse(captured.options.body),{name:'Alice'});
+  } finally { globalThis.fetch=originalFetch; api.setAPIKey(''); api.clearFireworksCredentials(); }
+});

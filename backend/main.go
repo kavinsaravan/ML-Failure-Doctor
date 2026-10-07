@@ -34,6 +34,13 @@ func positiveEnv(name string, fallback int) int {
 func buildRouter(server *api.Server, limiter *middleware.IPRateLimiter, mode string) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
+	signupLimiter := server.WorkspaceLimiter
+	if signupLimiter == nil {
+		signupLimiter = middleware.NewIPRateLimiter(3)
+	}
+	// A second, global limit bounds creation across changing client IPs.
+	signup := middleware.GlobalRateLimit(10, 5)(signupLimiter.Middleware(http.HandlerFunc(server.CreateWorkspaceHandler)))
+	r.Handle("/workspaces", signup).Methods("POST")
 	session := r.PathPrefix("/session").Subrouter()
 	session.Use(middleware.Authenticate(server.DB, false))
 	session.HandleFunc("", server.SessionHandler).Methods("GET")
@@ -101,6 +108,12 @@ func main() {
 		log.Fatal(err)
 	}
 	limiter.Cleanup(ctx)
+	signupLimiter := middleware.NewIPRateLimiter(3)
+	if err := signupLimiter.SetTrustedProxies(strings.Split(os.Getenv("TRUSTED_PROXY_CIDRS"), ",")); err != nil {
+		log.Fatal(err)
+	}
+	signupLimiter.Cleanup(ctx)
+	server.WorkspaceLimiter = signupLimiter
 	origins := os.Getenv("ALLOWED_ORIGINS")
 	if origins == "" {
 		origins = "http://localhost:3000,http://localhost:3001"

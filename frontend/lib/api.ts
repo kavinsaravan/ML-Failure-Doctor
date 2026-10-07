@@ -67,7 +67,15 @@ export const api = {
   clearFireworksCredentials() { fireworksKey = ''; fireworksModel = ''; },
   hasAPIKey() { return apiKey.length > 0; },
   setAPIKey(key: string) { if (key !== apiKey) { fireworksKey = ''; fireworksModel = ''; } apiKey = key; },
-  async getAccessRequirements(): Promise<{ auth_required: boolean }> {
+  getAPIURL() { return API_URL; },
+  async createWorkspace(name: string): Promise<{ api_key: string; owner_id: string; name: string }> {
+    const res = await fetch(`${API_URL}/workspaces`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error(await res.text() || 'Workspace creation failed');
+    return res.json();
+  },
+  async getAccessRequirements(): Promise<{ auth_required: boolean; workspace_creation_enabled?: boolean }> {
     const res = await fetch(`${API_URL}/health`, { headers: getHeaders(), cache: 'no-store' });
     await checkResponse(res, 'Backend unavailable');
     return res.json();

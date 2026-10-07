@@ -22,6 +22,7 @@ type Server struct {
 	FWClient            *fireworks.Client
 	Runner              *runner.Manager
 	FireworksHTTPClient *http.Client
+	WorkspaceLimiter    *middleware.IPRateLimiter
 }
 
 func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +31,7 @@ func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
 		mode = "private"
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "auth_required": s.authRequired(mode), "access_mode": mode})
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "auth_required": s.authRequired(mode), "access_mode": mode, "workspace_creation_enabled": WorkspaceCreationEnabled()})
 }
 
 func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -489,4 +490,36 @@ func (s *Server) RevokeKeyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+func WorkspaceCreationEnabled() bool { return os.Getenv("ALLOW_WORKSPACE_CREATION") != "false" }
+
+// Public signup only creates a fresh owner, never credentials for an existing workspace.
+func (s *Server) CreateWorkspaceHandler(w http.ResponseWriter, r *http.Request) {
+	if !WorkspaceCreationEnabled() {
+		http.Error(w, "Workspace creation is disabled", 403)
+		return
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		http.Error(w, "Provide a workspace name", 400)
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if len(input.Name) == 0 || len(input.Name) > 100 {
+		http.Error(w, "Workspace name must be 1–100 characters", 400)
+		return
+	}
+	key, token, err := s.DB.IssueAPIKey(input.Name, "")
+	if err != nil {
+		http.Error(w, "Workspace creation failed", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	json.NewEncoder(w).Encode(map[string]string{"api_key": token, "owner_id": key.OwnerID, "name": key.Name})
 }
