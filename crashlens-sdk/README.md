@@ -374,17 +374,6 @@ Tests cover:
 - Jupyter magic commands
 - BYOK credential forwarding
 
-
-## SDK Limitations
-
-The SDK cannot capture failures in certain scenarios:
-
-- **SIGKILL (kill -9)**: Process is terminated immediately without cleanup - no error can be reported
-- **Notebook kernel crashes**: If the Jupyter kernel dies, the SDK context manager cannot execute cleanup code
-- **Machine loss**: If the entire machine shuts down or becomes unreachable, the SDK cannot upload final state
-
-In these cases, the workload will remain in `running` status in the dashboard. The last successfully uploaded telemetry snapshot will be available, but there will be no error traceback.
-
 ## Architecture
 
 ```
