@@ -378,3 +378,29 @@ PORT=8080  # Optional, defaults to 8080
 ```
 
 ---
+
+## Apple GPU tracking (Metal / MPS)
+
+Run the SDK natively on a Mac with MPS-capable PyTorch; Docker Desktop does not
+expose the Apple GPU to the Linux backend. The API can run locally or remotely.
+In a Python virtual environment:
+
+```bash
+python -m pip install torch -e ./crashlens-sdk
+export CRASHLENS_URL=http://localhost:8080
+# Set CRASHLENS_API_KEY when the backend requires authentication.
+python scripts/validate_gpu.py --device mps
+```
+
+Use `model.to("mps")` and move training tensors to `mps` inside your usual
+`WorkloadTracker.track(...)` block. The tracker detects MPS automatically.
+The validation command trains for ten seconds and requires live `torch.mps`
+samples at the API. It refuses CPU fallback; it does not simulate GPU success.
+
+MPS samples report process Metal driver allocations (including caches), tensor
+allocations, and the recommended maximum working set. The legacy total-memory
+field represents that working-set recommendation, **not physical VRAM**. Ratios
+can exceed 100%. Utilization, temperature, and an exact allocation peak are not
+available and are not fabricated. Sampling can miss short-lived allocations.
+MPS OOM messages are classified as GPU_OUT_OF_MEMORY. GPU memory APIs follow
+[PyTorch's MPS documentation](https://docs.pytorch.org/docs/stable/mps.html).

@@ -61,7 +61,12 @@ func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
 	}
 
 	// Fallback to rule-based diagnosis
-	return ruleBasedDiagnosis(failureType, evidence, classResult.Confidence)
+	report := ruleBasedDiagnosis(failureType, evidence, classResult.Confidence)
+	if failureType == classifier.GPUOutOfMemory && (strings.Contains(strings.ToLower(logs), "mps") || strings.Contains(gpuMetrics, "torch.mps")) {
+		report.RootCause = "Apple MPS memory allocation failed: the requested allocation exceeded the available memory or the process allocation limit"
+		report.RecommendedFix = "Reduce the requested tensor size or batch size; release unused tensors and retained computation graphs; use gradient accumulation for training. torch.mps.empty_cache() releases unused cached allocations, not live tensors. Keep MPS memory safety limits enabled."
+	}
+	return report
 }
 
 func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType string, evidence []string, confidence float64) *Report {

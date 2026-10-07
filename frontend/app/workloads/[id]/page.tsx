@@ -317,7 +317,7 @@ export default function WorkloadDetail() {
                   <div className="flex items-center gap-2">
                     <Database className="w-4 h-4 text-orange-400" />
                     <span className="text-slate-300">
-                      Peak GPU Memory: <span className="font-semibold text-white">
+                      {metrics.some(m => m.source === 'torch.mps') ? 'Peak sampled Metal process memory / recommended working set: ' : 'Peak GPU Memory: '}<span className="font-semibold text-white">
                         {(peakMemory.used / 1024).toFixed(1)}GB / {(peakMemory.total / 1024).toFixed(1)}GB
                       </span> ({peakMemory.percent.toFixed(1)}%)
                     </span>
@@ -397,11 +397,14 @@ export default function WorkloadDetail() {
                 <Database className="w-5 h-5 text-blue-400" />
                 <h3 className="text-xl font-semibold text-white">GPU Memory Usage{metrics.some(m => m.source === 'Simulated') ? ' (simulated demo data)' : ''}</h3>
               </div>
+              {metrics.some(m => m.source === 'torch.mps') && (
+                <p className="text-sm text-slate-400 mb-4">Apple MPS: process Metal memory as a percentage of the recommended working set, not physical VRAM. Includes cached allocations. Utilization and temperature are unavailable.</p>
+              )}
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                   <XAxis dataKey="index" stroke="#9CA3AF" />
-                  <YAxis stroke="#9CA3AF" domain={[0, 100]} />
+                  <YAxis stroke="#9CA3AF" domain={[0, (dataMax: number) => Math.max(100, dataMax)]} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: '#1e293b',
@@ -429,6 +432,9 @@ export default function WorkloadDetail() {
                 <Cpu className="w-5 h-5 text-green-400" />
                 <h3 className="text-xl font-semibold text-white">GPU Utilization</h3>
               </div>
+              {!metrics.some(m => m.gpu_utilization_percent != null) ? (
+                <p className="text-slate-400">Utilization is unavailable from this telemetry source.</p>
+              ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -453,6 +459,7 @@ export default function WorkloadDetail() {
                   />
                 </LineChart>
               </ResponsiveContainer>
+              )}
             </div>
           </div>
         )}

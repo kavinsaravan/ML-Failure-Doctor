@@ -5,7 +5,7 @@ Collects GPU memory and utilization during training with:
 - Try/except wrapping so collection never crashes the job
 - Ring buffer to limit memory (last 300 samples = 10 minutes at 2s intervals)
 - Final snapshot on exit to capture OOM peak
-- Multi-vendor support (NVIDIA via pynvml, AMD/ROCm via torch.cuda)
+- Multi-vendor support (NVIDIA via pynvml, AMD/ROCm via torch.cuda, Apple via torch.mps)
 """
 
 import time
@@ -41,6 +41,7 @@ class GPUMetricsSampler:
         # Try to initialize GPU monitoring
         self.nvml_available = False
         self.torch_cuda_available = False
+        self.mps_available = False
 
         try:
             import pynvml
@@ -57,6 +58,9 @@ class GPUMetricsSampler:
             if torch.cuda.is_available():
                 self.torch = torch
                 self.torch_cuda_available = True
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                self.torch = torch
+                self.mps_available = True
         except Exception:
             # torch not available
             pass
@@ -131,6 +135,9 @@ class GPUMetricsSampler:
             if self.torch_cuda_available:
                 return self._collect_torch_cuda(timestamp)
 
+            if self.mps_available:
+                return self._collect_mps(timestamp)
+
             return None
 
         except Exception:
@@ -185,6 +192,27 @@ class GPUMetricsSampler:
             "gpu_utilization_percent": None,  # Not available via torch.cuda
             "temperature_celsius": None,
             "source": "torch.cuda"
+        }
+
+    def _collect_mps(self, timestamp: str) -> Optional[Dict]:
+        """Process Metal allocations relative to the recommended working set, not VRAM."""
+        mps = self.torch.mps
+        allocated = mps.current_allocated_memory()
+        used = mps.driver_allocated_memory()
+        recommended = mps.recommended_max_memory()
+        if recommended <= 0:
+            return None
+        return {
+            "timestamp": timestamp,
+            "gpu_memory_used_mb": used / (1024 ** 2),
+            "gpu_memory_total_mb": recommended / (1024 ** 2),
+            "gpu_memory_percent": used / recommended * 100,
+            "gpu_tensor_memory_mb": allocated / (1024 ** 2),
+            "memory_scope": "process",
+            "memory_total_basis": "recommended_working_set",
+            "gpu_utilization_percent": None,
+            "temperature_celsius": None,
+            "source": "torch.mps",
         }
 
     @staticmethod

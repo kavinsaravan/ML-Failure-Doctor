@@ -17,8 +17,8 @@ const (
 	DependencyError   = "DEPENDENCY_ERROR"
 	DataPathError     = "DATA_PATH_ERROR"
 	Timeout           = "TIMEOUT"
-	ROCmError         = "ROCM_ERROR"     // AMD-specific errors
-	CUDAError         = "CUDA_ERROR"     // NVIDIA-specific errors
+	ROCmError         = "ROCM_ERROR" // AMD-specific errors
+	CUDAError         = "CUDA_ERROR" // NVIDIA-specific errors
 	GPUDriverError    = "GPU_DRIVER_ERROR"
 	UnknownError      = "UNKNOWN_ERROR"
 )
@@ -45,6 +45,9 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		strings.Contains(logsLower, "hip error: out of memory") {
 		return ClassificationResult{GPUOutOfMemory, 0.95}
 	}
+	if strings.Contains(logsLower, "mps backend out of memory") || strings.Contains(logsLower, "mps out of memory") {
+		return ClassificationResult{GPUOutOfMemory, 0.95}
+	}
 	// NVIDIA/CUDA specific OOM
 	if strings.Contains(logsLower, "cuda out of memory") ||
 		strings.Contains(logsLower, "cudamalloc failed") ||
@@ -67,8 +70,8 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 	}
 	if strings.Contains(logsLower, "checkpoint") &&
 		(strings.Contains(logsLower, "not found") ||
-		 strings.Contains(logsLower, "missing") ||
-		 strings.Contains(logsLower, "does not exist")) {
+			strings.Contains(logsLower, "missing") ||
+			strings.Contains(logsLower, "does not exist")) {
 		return ClassificationResult{MissingCheckpoint, 0.85}
 	}
 
@@ -143,7 +146,7 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 	// GPU driver issues (generic)
 	if strings.Contains(logsLower, "cuda") &&
 		(strings.Contains(logsLower, "not available") ||
-		 strings.Contains(logsLower, "driver version")) {
+			strings.Contains(logsLower, "driver version")) {
 		return ClassificationResult{GPUDriverError, 0.85}
 	}
 	if strings.Contains(logsLower, "gpu not found") ||
