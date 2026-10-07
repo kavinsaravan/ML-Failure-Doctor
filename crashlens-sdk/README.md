@@ -83,7 +83,7 @@ print(f"Workload ID: {workload_id}")
 
 That's it! If your training fails, the SDK automatically:
 - Captures the error traceback
-- Uploads all logs and GPU metrics
+- Uploads logs and GPU metrics
 - Marks the workload as failed
 - Makes it available for diagnosis in the dashboard
 
@@ -156,12 +156,12 @@ If `nvidia-ml-py` is installed:
 ### NVIDIA/AMD GPUs (via PyTorch)
 
 Fallback if NVML unavailable:
-- **Memory**: Allocated MB, Reserved MB, Total MB (device 0)
+- **Memory**: Device-wide used memory, Total memory, Percentage, and Peak tensor allocation
 - Works with both `torch.cuda` (NVIDIA) and ROCm (AMD)
 
 ### Apple Silicon (via MPS)
 
-For M1/M2/M3 Macs with `torch.mps`:
+For MPS-capable Macs with `torch.mps`:
 - **Driver Memory**: Metal driver allocation
 - **Tensor Memory**: Actual PyTorch tensor allocation
 - **Working Set**: Apple's recommended maximum (not physical VRAM)
@@ -225,14 +225,12 @@ print(report["safe_to_retry"])
 - **Safe to Retry**: Whether re-running might succeed
 - **Prevention**: How to avoid this in the future
 
-Reports are cached - calling `diagnose()` again returns the saved report without re-running AI.
-
 ## Jupyter Notebook Support
 
 For enhanced notebook displays, use `JupyterWorkloadTracker`:
 
 ```python
-from crashlens import JupyterWorkloadTracker
+from crashlens.jupyter import JupyterWorkloadTracker
 
 tracker = JupyterWorkloadTracker(
     os.environ["CRASHLENS_URL"],
@@ -255,7 +253,7 @@ with tracker.track("Training") as workload_id:
 Load the extension for even easier tracking:
 
 ```python
-%load_ext crashlens
+%load_ext crashlens.jupyter
 %crashlens_init https://your-backend.railway.app
 ```
 
@@ -292,8 +290,6 @@ The original exception always propagates - the SDK never swallows errors.
 # - Tries to upload at next interval
 ```
 
-Network errors never crash your training loop.
-
 ### GPU Collection Errors
 
 ```python
@@ -310,12 +306,11 @@ Network errors never crash your training loop.
 
 ```python
 tracker = WorkloadTracker(
-    base_url: str,                      # Backend URL (required)
+    api_url: str,                      # Backend URL (required)
     api_key: str = None,                # Your API key (required if backend has auth)
     fireworks_api_key: str = None,      # Fireworks AI key (optional, for BYOK)
     fireworks_model: str = None,        # Fireworks model ID (required with fireworks_api_key)
     upload_interval: float = 2.0,       # Seconds between live uploads
-    request_timeout: float = 10.0       # HTTP request timeout
 )
 ```
 
@@ -323,7 +318,7 @@ tracker = WorkloadTracker(
 
 ```python
 # Track a code block
-with tracker.track(name: str) as workload_id:
+with tracker.track("Training") as workload_id:
     ...
 
 # Track a function
@@ -332,10 +327,7 @@ def my_function():
     ...
 
 # Diagnose a failure
-report = tracker.diagnose(
-    workload_id: int,
-    refresh: bool = False  # Force new AI diagnosis even if cached
-)
+report = tracker.diagnose(workload_id)
 ```
 
 ## Validation & Testing
@@ -369,48 +361,6 @@ Tests cover:
 - Jupyter magic commands
 - BYOK credential forwarding
 
-## Common Issues
-
-### "No GPU metrics recorded"
-
-**Causes:**
-- No supported GPU detected
-- PyTorch not installed or not GPU-enabled
-- GPU not initialized (model/tensors not on GPU)
-
-**Solutions:**
-- Install PyTorch with GPU support
-- Move your model to GPU: `model.to('cuda')` or `model.to('mps')`
-- Check `torch.cuda.is_available()` or `torch.mps.is_available()`
-- Run `scripts/validate_gpu.py` to diagnose
-
-### "Authentication failed" errors
-
-**Causes:**
-- API key not set or incorrect
-- Backend requires authentication but no key provided
-- Key has been revoked
-
-**Solutions:**
-- Set `CRASHLENS_API_KEY` environment variable
-- Verify key in dashboard
-- Create a new workspace if key was revoked
-
-### MPS metrics show >100%
-
-**This is normal!** MPS reports memory relative to the "recommended working set", not physical VRAM. If you exceed the recommended limit, percentage > 100% warns you might hit system memory pressure.
-
-### Logs not appearing in dashboard
-
-**Causes:**
-- Network issues preventing uploads
-- Upload interval too long
-- Job finished before first upload
-
-**Solutions:**
-- Check network connectivity
-- Reduce `upload_interval` to 1-2 seconds
-- Check backend logs for upload errors
 
 ## Architecture
 
@@ -431,43 +381,4 @@ WorkloadTracker Context Manager
 CrashLens Backend (REST API)
        ↓
 Dashboard (view workload, diagnose)
-```
-
-## Resource Limits
-
-To prevent unbounded memory growth:
-
-- **Logs**: Last 256KB kept (rolling buffer)
-- **Metrics**: Last 300 samples kept (10 minutes at 2-second intervals)
-- **Upload Timeout**: 10 seconds per request (configurable)
-
-## Security Best Practices
-
-1. **Never hardcode credentials** in notebooks or scripts
-2. **Use environment variables** or secure prompts
-3. **Don't commit `.env` files** to git
-4. **Revoke compromised keys** immediately in dashboard
-5. **Use HTTPS** for backend URL in production
-
-## Examples
-
-See [example notebooks](examples/notebooks/README.md) for:
-- Basic workload tracking
-- Jupyter magic commands
-- PyTorch training integration
-- Error handling patterns
-- BYOK diagnosis
-
-## Related Documentation
-
-- [Root README](../README.md) - Full CrashLens overview
-- [Jupyter Integration](../docs/JUPYTER_INTEGRATION.md) - Notebook features
-- [Frontend](../frontend/README.md) - Dashboard usage
-- [MCP Server](../mcp-server/README.md) - Claude Desktop integration
-
-## Support
-
-For issues or questions:
-- Check [GitHub Issues](https://github.com/kavinsaravan/ML-Failure-Doctor/issues)
-- Review example notebooks
-- Run `scripts/validate_gpu.py` for diagnostics
+```    
