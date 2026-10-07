@@ -12,6 +12,7 @@ import (
 )
 
 type Workload struct {
+	OwnerID          string     `json:"-"`
 	ID               int        `json:"id"`
 	Name             string     `json:"name"`
 	Type             string     `json:"type"`   // ML_JOB
@@ -72,24 +73,36 @@ func initSchema(db *sql.DB) error {
 	if _, err := db.Exec(schema); err != nil {
 		return err
 	}
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('workloads') WHERE name = 'runner_managed'").Scan(&count); err != nil {
-		return err
+	for _, column := range []struct{ name, definition string }{
+		{"runner_managed", "INTEGER NOT NULL DEFAULT 0"},
+		{"owner_id", "TEXT NOT NULL DEFAULT 'legacy'"},
+	} {
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('workloads') WHERE name = ?", column.name).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := db.Exec("ALTER TABLE workloads ADD COLUMN " + column.name + " " + column.definition); err != nil {
+				return err
+			}
+		}
 	}
-	if count == 0 {
-		_, err := db.Exec("ALTER TABLE workloads ADD COLUMN runner_managed INTEGER NOT NULL DEFAULT 0")
-		return err
-	}
-	return nil
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS workloads_owner ON workloads(owner_id);
+ CREATE TABLE IF NOT EXISTS api_keys (
+ id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, name TEXT NOT NULL,
+ key_hash TEXT NOT NULL UNIQUE, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ revoked_at TIMESTAMP);
+ `)
+	return err
 }
 
-func (db *DB) GetWorkloads() ([]Workload, error) {
+func (db *DB) GetWorkloads(owner ...string) ([]Workload, error) {
 	rows, err := db.Query(`
 		SELECT id, name, type, status, failure_type, created_at, started_at,
 		       finished_at, runtime_seconds, exit_code, wasted_gpu_seconds
-		FROM workloads
+		FROM workloads WHERE (? IS NULL OR owner_id = ?)
 		ORDER BY created_at DESC
-	`)
+	`, ownerFilter(owner), ownerFilter(owner))
 	if err != nil {
 		return nil, err
 	}
@@ -109,28 +122,28 @@ func (db *DB) GetWorkloads() ([]Workload, error) {
 	return workloads, rows.Err()
 }
 
-func (db *DB) GetWorkload(id string) (*Workload, error) {
+func (db *DB) GetWorkload(id string, owner ...string) (*Workload, error) {
 	var workload Workload
 	err := db.QueryRow(`
 		SELECT id, name, type, status, failure_type, created_at, started_at,
 		       finished_at, runtime_seconds, exit_code, wasted_gpu_seconds,
-		       job_logs, gpu_metrics, checkpoint_state, failure_report
-		FROM workloads WHERE id = ?
-	`, id).Scan(
+		       job_logs, gpu_metrics, checkpoint_state, failure_report, owner_id
+		FROM workloads WHERE id = ? AND (? IS NULL OR owner_id = ?)
+	`, id, ownerFilter(owner), ownerFilter(owner)).Scan(
 		&workload.ID, &workload.Name, &workload.Type, &workload.Status,
 		&workload.FailureType, &workload.CreatedAt, &workload.StartedAt,
 		&workload.FinishedAt, &workload.RuntimeSeconds, &workload.ExitCode,
 		&workload.WastedGPUSeconds, &workload.JobLogs, &workload.GPUMetrics,
-		&workload.CheckpointState, &workload.FailureReport,
+		&workload.CheckpointState, &workload.FailureReport, &workload.OwnerID,
 	)
 	return &workload, err
 }
 
-func (db *DB) CreateWorkload(name, workloadType, status string) (int64, error) {
+func (db *DB) CreateWorkload(name, workloadType, status string, owner ...string) (int64, error) {
 	result, err := db.Exec(`
-		INSERT INTO workloads (name, type, status, started_at)
-  VALUES (?, ?, ?, ?)
-	`, name, workloadType, status, startedAt(status))
+		INSERT INTO workloads (name, type, status, started_at, owner_id)
+  VALUES (?, ?, ?, ?, ?)
+	`, name, workloadType, status, startedAt(status), creationOwner(owner))
 	if err != nil {
 		return 0, err
 	}
@@ -154,11 +167,11 @@ func (db *DB) updateWorkload(id string, workload *Workload, expectedStatus *stri
 		    exit_code = ?, wasted_gpu_seconds = ?,
 		    job_logs = ?, gpu_metrics = ?, checkpoint_state = ?,
 		    failure_report = ?
-  WHERE id = ? AND (? IS NULL OR status = ?)
+  WHERE id = ? AND (? IS NULL OR status = ?) AND owner_id = ?
  `, workload.Name, workload.Type, workload.Status, workload.FailureType,
 		workload.StartedAt, workload.FinishedAt, workload.RuntimeSeconds,
 		workload.ExitCode, workload.WastedGPUSeconds, workload.JobLogs,
-		workload.GPUMetrics, workload.CheckpointState, workload.FailureReport, id, expectedStatus, expectedStatus)
+		workload.GPUMetrics, workload.CheckpointState, workload.FailureReport, id, expectedStatus, expectedStatus, creationOwner([]string{workload.OwnerID}))
 	if err != nil {
 		return err
 	}
@@ -216,14 +229,14 @@ func startedAt(status string) *time.Time {
 	return &now
 }
 
-func (db *DB) GetStats() (map[string]interface{}, error) {
+func (db *DB) GetStats(owner ...string) (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 	var total, failed, succeeded int
 	var wastedGPU float64
 	err := db.QueryRow(`SELECT COUNT(*),
   COALESCE(SUM(status = 'failed'), 0), COALESCE(SUM(status = 'succeeded'), 0),
   COALESCE(SUM(CASE WHEN status = 'failed' THEN wasted_gpu_seconds ELSE 0 END), 0)
-  FROM workloads`).Scan(&total, &failed, &succeeded, &wastedGPU)
+  FROM workloads WHERE (? IS NULL OR owner_id = ?)`, ownerFilter(owner), ownerFilter(owner)).Scan(&total, &failed, &succeeded, &wastedGPU)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +244,7 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 	stats["failed_workloads"] = failed
 	stats["succeeded_workloads"] = succeeded
 	stats["wasted_gpu_seconds"] = wastedGPU
-	rows, err := db.Query("SELECT failure_type, COUNT(*) FROM workloads WHERE status = 'failed' AND failure_type IS NOT NULL GROUP BY failure_type")
+	rows, err := db.Query("SELECT failure_type, COUNT(*) FROM workloads WHERE status = 'failed' AND failure_type IS NOT NULL AND (? IS NULL OR owner_id = ?) GROUP BY failure_type", ownerFilter(owner), ownerFilter(owner))
 	if err != nil {
 		return nil, err
 	}
@@ -253,8 +266,8 @@ func (db *DB) GetStats() (map[string]interface{}, error) {
 	return stats, nil
 }
 
-func (db *DB) CreateManagedWorkload(name, kind string) (int64, error) {
-	result, err := db.Exec("INSERT INTO workloads (name,type,status,runner_managed) VALUES (?,?,'pending',1)", name, kind)
+func (db *DB) CreateManagedWorkload(name, kind string, owner ...string) (int64, error) {
+	result, err := db.Exec("INSERT INTO workloads (name,type,status,runner_managed,owner_id) VALUES (?,?,'pending',1,?)", name, kind, creationOwner(owner))
 	if err != nil {
 		return 0, err
 	}
@@ -317,4 +330,17 @@ func (db *DB) RecoverManagedJobs(reason string) error {
 		}
 	}
 	return nil
+}
+
+func ownerFilter(owner []string) interface{} {
+	if len(owner) == 0 {
+		return nil
+	}
+	return owner[0]
+}
+func creationOwner(owner []string) string {
+	if len(owner) == 0 || owner[0] == "" {
+		return "legacy"
+	}
+	return owner[0]
 }

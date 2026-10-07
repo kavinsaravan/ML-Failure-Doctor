@@ -38,13 +38,13 @@ export default function AccessGate({ children }: { children: ReactNode }) {
     } catch (err) { setError((err as Error).message); }
     finally { setBusy(false); }
   };
-  const disconnect = () => { api.setAPIKey(''); setKey(''); void check(); };
+  const disconnect = () => { api.setAPIKey(''); setKey(''); setAccess('checking'); void check(); };
   if (pathname === '/') return children;
   if (access === 'checking') return <main className="min-h-screen bg-slate-950 text-white p-8">Connecting to CrashLens…</main>;
   return <>
     <section className="bg-slate-900 text-white border-b border-slate-700 p-4">
       {access === 'authenticated' ? <div className="flex items-center gap-4">
-        <span>Connected with API key</span>
+        <span>Connected to your private workspace</span>
         <button onClick={disconnect} className="text-blue-300">Disconnect</button>
       </div> : <form onSubmit={connect} className="flex flex-wrap items-center gap-3">
         <span>{access === 'public' ? 'Public access. Connect to manage workloads.' : 'Enter your CrashLens API key to access workloads.'}</span>

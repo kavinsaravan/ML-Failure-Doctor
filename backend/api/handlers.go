@@ -10,6 +10,7 @@ import (
 	"crashlens/db"
 	"crashlens/diagnosis"
 	"crashlens/fireworks"
+	"crashlens/middleware"
 	"crashlens/runner"
 
 	"github.com/gorilla/mux"
@@ -27,7 +28,7 @@ func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
 		mode = "private"
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "auth_required": os.Getenv("CRASHLENS_API_KEY") != "" && mode != "demo", "access_mode": mode})
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "auth_required": s.authRequired(mode), "access_mode": mode})
 }
 
 func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +52,7 @@ func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create workload
-	id, err := s.DB.CreateWorkload(req.Name, req.Type, req.Status)
+	id, err := s.DB.CreateWorkload(req.Name, req.Type, req.Status, middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -68,7 +69,7 @@ func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) GetWorkloadsHandler(w http.ResponseWriter, r *http.Request) {
-	workloads, err := s.DB.GetWorkloads()
+	workloads, err := s.DB.GetWorkloads(middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -82,7 +83,7 @@ func (s *Server) GetWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	workload, err := s.DB.GetWorkload(id)
+	workload, err := s.DB.GetWorkload(id, middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, "Workload not found", http.StatusNotFound)
 		return
@@ -97,7 +98,7 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	// Get existing workload
-	existing, err := s.DB.GetWorkload(id)
+	existing, err := s.DB.GetWorkload(id, middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, "Workload not found", http.StatusNotFound)
 		return
@@ -178,7 +179,11 @@ func (s *Server) DeleteWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	_, err := s.DB.Exec("DELETE FROM workloads WHERE id = ?", id)
+	if _, err := s.DB.GetWorkload(id, middleware.RequestIdentity(r).Owner); err != nil {
+		http.Error(w, "Workload not found", 404)
+		return
+	}
+	_, err := s.DB.Exec("DELETE FROM workloads WHERE id = ? AND owner_id = ?", id, middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -188,7 +193,7 @@ func (s *Server) DeleteWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ClearAllWorkloadsHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := s.DB.Exec("DELETE FROM workloads")
+	_, err := s.DB.Exec("DELETE FROM workloads WHERE owner_id = ?", middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -248,7 +253,7 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Job runner unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	id, err := s.Runner.Submit(req.Name, req.Type, filepath.Join(jobsDir, scriptPath))
+	id, err := s.Runner.Submit(req.Name, req.Type, filepath.Join(jobsDir, scriptPath), middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		if errors.Is(err, runner.ErrQueueFull) || errors.Is(err, runner.ErrStopped) {
 			w.Header().Set("Retry-After", "5")
@@ -272,7 +277,7 @@ func (s *Server) GetWorkloadLogsHandler(w http.ResponseWriter, r *http.Request) 
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	workload, err := s.DB.GetWorkload(id)
+	workload, err := s.DB.GetWorkload(id, middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, "Workload not found", http.StatusNotFound)
 		return
@@ -295,7 +300,7 @@ func (s *Server) GetWorkloadMetricsHandler(w http.ResponseWriter, r *http.Reques
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	workload, err := s.DB.GetWorkload(id)
+	workload, err := s.DB.GetWorkload(id, middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, "Workload not found", http.StatusNotFound)
 		return
@@ -315,7 +320,7 @@ func (s *Server) GetWorkloadMetricsHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) GetSummaryHandler(w http.ResponseWriter, r *http.Request) {
-	stats, err := s.DB.GetStats()
+	stats, err := s.DB.GetStats(middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -329,7 +334,7 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	workload, err := s.DB.GetWorkload(id)
+	workload, err := s.DB.GetWorkload(id, middleware.RequestIdentity(r).Owner)
 	if err != nil {
 		http.Error(w, "Workload not found", http.StatusNotFound)
 		return
@@ -362,9 +367,9 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// Update only the report and reject results if inputs changed during the AI call.
-	result, err := s.DB.Exec(`UPDATE workloads SET failure_report = ? WHERE id = ?
+	result, err := s.DB.Exec(`UPDATE workloads SET failure_report = ? WHERE id = ? AND owner_id = ?
   AND status = 'failed' AND job_logs IS ? AND gpu_metrics IS ? AND failure_type IS ? AND runtime_seconds IS ?`,
-		string(reportJSON), id, workload.JobLogs, workload.GPUMetrics, workload.FailureType, workload.RuntimeSeconds)
+		string(reportJSON), id, middleware.RequestIdentity(r).Owner, workload.JobLogs, workload.GPUMetrics, workload.FailureType, workload.RuntimeSeconds)
 	if err != nil {
 		http.Error(w, "Failed to save diagnosis", http.StatusInternalServerError)
 		return
@@ -381,5 +386,83 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) SessionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"authenticated": true, "auth_required": os.Getenv("CRASHLENS_API_KEY") != ""})
+	json.NewEncoder(w).Encode(map[string]interface{}{"authenticated": true, "auth_required": s.authRequired("private"), "owner_id": middleware.RequestIdentity(r).Owner, "admin": middleware.RequestIdentity(r).Admin})
+}
+
+func (s *Server) authRequired(mode string) bool {
+	hasKeys, err := s.DB.HasAPIKeys()
+	return err != nil || hasKeys || (os.Getenv("CRASHLENS_API_KEY") != "" && mode != "demo")
+}
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if !middleware.RequestIdentity(r).Admin {
+		http.Error(w, "Operator API key required", 403)
+		return false
+	}
+	return true
+}
+func (s *Server) IssueKeyHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var input struct {
+		Name    string `json:"name"`
+		OwnerID string `json:"owner_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || len(input.Name) == 0 || len(input.Name) > 100 {
+		http.Error(w, "A name of 1–100 characters is required", 400)
+		return
+	}
+	// Reissue keys only for existing owners; ownership cannot be chosen by ordinary users.
+	if input.OwnerID != "" {
+		keys, err := s.DB.GetAPIKeys()
+		if err != nil {
+			http.Error(w, "Key lookup failed", 500)
+			return
+		}
+		found := false
+		for _, key := range keys {
+			if key.OwnerID == input.OwnerID {
+				found = true
+			}
+		}
+		if !found {
+			http.Error(w, "Owner not found", 404)
+			return
+		}
+	}
+	key, token, err := s.DB.IssueAPIKey(input.Name, input.OwnerID)
+	if err != nil {
+		http.Error(w, "Key creation failed", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": key.ID, "owner_id": key.OwnerID, "name": key.Name, "api_key": token})
+}
+func (s *Server) ListKeysHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	keys, err := s.DB.GetAPIKeys()
+	if err != nil {
+		http.Error(w, "Key lookup failed", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(keys)
+}
+func (s *Server) RevokeKeyHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	found, err := s.DB.RevokeAPIKey(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, "Revocation failed", 500)
+		return
+	}
+	if !found {
+		http.Error(w, "Active key not found", 404)
+		return
+	}
+	w.WriteHeader(204)
 }

@@ -404,3 +404,38 @@ can exceed 100%. Utilization, temperature, and an exact allocation peak are not
 available and are not fabricated. Sampling can miss short-lived allocations.
 MPS OOM messages are classified as GPU_OUT_OF_MEMORY. GPU memory APIs follow
 [PyTorch's MPS documentation](https://docs.pytorch.org/docs/stable/mps.html).
+
+## Individual API keys and private workloads
+
+Each issued CrashLens key identifies an owner. The API restricts lists, details,
+logs, metrics, summaries, updates, diagnoses, template runs, and deletion to that
+owner. Enter the user key in the dashboard and use the same key in the SDK or MCP
+client. Users cannot select ownership through request payloads. No signup or
+password login is required.
+
+`CRASHLENS_API_KEY` is the operator key: keep it private. It can issue and revoke
+user keys and retains access to preexisting workloads in the legacy workspace.
+It does not provide cross-owner workload access. User secrets are generated with
+cryptographic randomness and stored only as SHA-256 hashes; they are returned once
+at issuance. Keep the SQLite database on persistent storage, since it stores both
+workloads and key records. Existing data is migrated automatically.
+
+Issue a separate key for each person (the command prompts for your operator key):
+
+```bash
+python scripts/manage_keys.py --api-url https://YOUR-BACKEND issue Alice
+python scripts/manage_keys.py --api-url https://YOUR-BACKEND list
+python scripts/manage_keys.py --api-url https://YOUR-BACKEND revoke KEY_ID
+```
+
+The returned `api_key` is what Alice enters in her SDK and dashboard. To replace
+her key while retaining her workloads, issue with `--owner-id OWNER_ID`, then
+revoke the old key. Revocation blocks subsequent requests and preserves the data.
+The list endpoint never returns secrets or hashes. Operator endpoints are
+`POST /api-keys`, `GET /api-keys`, and `DELETE /api-keys/{id}`.
+
+Once any individual keys have been issued, anonymous access is disabled even in
+`ACCESS_MODE=demo`; authenticated keys always see only their own workloads. For
+public hosting use production mode and private access. This feature isolates
+data; user diagnoses still use your backend's Fireworks account. It does not add
+per-user spending quotas or bring-your-own Fireworks credentials.
