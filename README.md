@@ -6,7 +6,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)
 
-**CrashLens** is an intelligent failure diagnosis platform designed for GPU workloads. It combines real-time GPU metrics collection (nvidia-smi/rocm-smi), AI-powered root cause analysis, and comprehensive observability for ML training jobs across all GPU platforms.
+**CrashLens** is an intelligent failure diagnosis platform designed for GPU workloads. It combines real-time GPU metrics collection (nvidia-smi/rocm-smi/), AI-powered root cause analysis, and comprehensive observability for ML training jobs across all GPU platforms.
 
 ---
 
@@ -26,14 +26,14 @@
 ##  Key Features
 
 ###  GPU Workload Diagnosis
-- **Automatic Failure Classification**: GPU OOM, missing checkpoints, dependency errors, data path errors, timeouts, CUDA/ROCm runtime errors
+- **Automatic Failure Classification**: GPU OOM, missing checkpoints, dependency errors, data path errors, timeouts, runtime errors
 - **AI-Powered Doctor**: AI-powered diagnosis via Fireworks AI providing:
   - Root cause analysis
   - Evidence extraction from logs
   - Recommended fixes with retry safety assessment
   - Prevention strategies
 - **Universal GPU Support**:
-  - Backend auto-detects NVIDIA (nvidia-smi) or AMD (rocm-smi) for demo job metrics
+  - Backend auto-detects NVIDIA (nvidia-smi), AMD (rocm-smi), or APPLE MPS for demo job metrics
   - SDK supports NVIDIA CUDA, AMD ROCm, and Apple MPS on client side
   - Select one GPU per tracked run, with CUDA_VISIBLE_DEVICES support
   - Device metadata (UUID, index, name) identifies the selected GPU when available
@@ -46,8 +46,6 @@ CrashLens provides first-class support for Jupyter notebooks:
 - **Rich HTML Displays**: Color-coded status, formatted diagnosis reports
 - **Inline Metrics**: GPU metrics displayed as pandas DataFrames
 - **Auto-Diagnosis**: Automatically diagnose failures in tracked cells
-
-See [Jupyter Notebook Support](./crashlens-sdk/README.md#jupyter-notebook-support) for usage.
 
 ###  Model Context Protocol (MCP) Integration
 CrashLens provides an optional MCP server that lets Claude Desktop and other MCP clients query workload data via 7 standardized tools:
@@ -62,8 +60,6 @@ CrashLens provides an optional MCP server that lets Claude Desktop and other MCP
 **Two separate AI integration paths:**
 1. **Backend Diagnosis**: `POST /workloads/{id}/diagnose` analyzes a failed workload. Ordinary users supply their own Fireworks key and tool-capable model through the dashboard, SDK, or request headers. Operator requests may use backend `FIREWORKS_API_KEY` and `FIREWORKS_MODEL`, which must both be configured. A saved AI report is returned without another inference call unless `?refresh=true` is supplied.
 2. **MCP Client Queries**: External tools like Claude Desktop can use the MCP server to retrieve these reports and other workload data. The MCP server calls the CrashLens REST API.
-
-See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed tool specifications.
 
 ---
 
@@ -188,7 +184,7 @@ ML-Failure-Doctor/
 | **Backend** | Go 1.26, Gorilla Mux | High-performance REST API |
 | **Database** | SQLite | Lightweight, embedded persistence |
 | **AI Model** | Fireworks AI | Intelligent failure diagnosis |
-| **GPU Platform** | **NVIDIA CUDA / AMD ROCm** | Universal GPU metrics collection |
+| **GPU Platform** | **NVIDIA CUDA / AMD ROCm / APPLE MPS** | Universal GPU metrics collection |
 | **Visualization** | Recharts | GPU metrics and performance charts |
 | **Containerization** | Docker, Docker Compose | Containerized deployment |
 
@@ -444,10 +440,6 @@ curl -X PUT "$CRASHLENS_URL/workloads/$WORKLOAD_ID" \
   -H "Content-Type: application/json" \
   -d '{"status":"failed","exit_code":1,"runtime_seconds":4,"job_logs":"RuntimeError: CUDA out of memory"}'
 
-# Rule-based diagnosis; also returns an existing cached AI report if present
-curl -X POST "$CRASHLENS_URL/workloads/$WORKLOAD_ID/diagnose" \
-  -H "Authorization: Bearer $CRASHLENS_API_KEY"
-
 # Optional AI diagnosis: set your own Fireworks credentials before this request
 curl -X POST "$CRASHLENS_URL/workloads/$WORKLOAD_ID/diagnose" \
   -H "Authorization: Bearer $CRASHLENS_API_KEY" \
@@ -556,8 +548,35 @@ Users can create their own workspaces directly from the dashboard without operat
 3. Receive a randomly generated CrashLens key (shown once)
 4. Use the key in the dashboard and SDK
 
-**Important:**
-- Keys cannot claim existing workspaces or grant operator privileges
-- No email, password, or self-service recovery
-- Anyone with the key can access the workspace
-- Users provide their own Fireworks credentials for AI diagnosis
+---
+
+# Failure Diagnosis Evaluation
+
+## Recorded Results
+
+| Metric | Rule-based | Fireworks-assisted |
+|---|---:|---:|
+| Correct classifications | 90 / 100 | 90 / 100 |
+| Classification accuracy | 90.0% | 90.0% |
+| Macro F1 | 87.1% | 87.1% |
+
+The Fireworks run used `accounts/fireworks/models/gpt-oss-120b`, available through
+[serverless inference with function calling](https://fireworks.ai/models/fireworks/gpt-oss-120b).
+Both runs used the same dataset hash. 
+
+| Expected category | Correct / cases (both runs) |
+|---|---:|
+| GPU out of memory | 10 / 10 |
+| Missing checkpoint | 13 / 13 |
+| Dependency error | 14 / 14 |
+| Data path error | 13 / 13 |
+| Timeout | 10 / 10 |
+| ROCm runtime error | 6 / 10 |
+| CUDA runtime error | 10 / 10 |
+| GPU driver error | 6 / 10 |
+| Unknown / outside supported categories | 8 / 10 |
+
+## Dataset and Limitations
+
+The set contains **90 authored log fixtures and 10 executed GPU failures**
+(missing imports, checkpoints, and data files).

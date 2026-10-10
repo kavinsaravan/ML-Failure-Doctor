@@ -51,7 +51,8 @@ Compose setting.
 - Receive a key once (no recovery)
 - Disable with `ALLOW_WORKSPACE_CREATION=false`
 
-**Operator key management:**
+### Operator Key Management
+
 ```bash
 python scripts/manage_keys.py --api-url https://YOUR-BACKEND issue Alice
 python scripts/manage_keys.py --api-url https://YOUR-BACKEND list
