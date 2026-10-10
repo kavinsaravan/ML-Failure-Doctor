@@ -69,6 +69,12 @@ func TestSDKLifecycleAndFallbackPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, exists := stats["gpu_platform"]; exists {
+		t.Fatal("ambiguous GPU field still present")
+	}
+	if _, exists := stats["backend_gpu_platform"]; !exists {
+		t.Fatal("missing backend GPU field")
+	}
 	if stats["wasted_gpu_seconds"] != 12.5 || stats["failure_types"].(map[string]int)["DEPENDENCY_ERROR"] != 1 {
 		t.Fatal(stats)
 	}
@@ -80,7 +86,15 @@ func TestSDKLifecycleAndFallbackPersistence(t *testing.T) {
 	if w.FailureReport != nil || w.FailureType == nil || *w.FailureType != "GPU_OUT_OF_MEMORY" {
 		t.Fatal("stale report or classification")
 	}
-	call("PUT", "/workloads/"+id, `{"status":"succeeded","exit_code":0}`)
+	success := call("POST", "/workloads", `{"name":"successful job","status":"running"}`)
+	if success.Code != 201 {
+		t.Fatal(success.Body.String())
+	}
+	json.Unmarshal(success.Body.Bytes(), &response)
+	id = fmt.Sprint(response.ID)
+	if done := call("PUT", "/workloads/"+id, `{"status":"succeeded","exit_code":0}`); done.Code != 200 {
+		t.Fatal(done.Body.String())
+	}
 	late := call("PUT", "/workloads/"+id, `{"status":"running","job_logs":"late upload"}`)
 	if late.Code != http.StatusConflict {
 		t.Fatal("late uploader revived completed workload")

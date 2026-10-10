@@ -43,10 +43,10 @@ type fakeCollector struct{}
 func (fakeCollector) Name() string      { return "NVIDIASMI" }
 func (fakeCollector) IsAvailable() bool { return true }
 func (fakeCollector) Collect() (*metrics.GPUMetric, error) {
-	return &metrics.GPUMetric{Timestamp: time.Now(), GPUMemoryUsedMB: 1024, GPUMemoryTotalMB: 2048, GPUMemoryPercent: 50, GPUUtilizationPercent: 90}, nil
+	return &metrics.GPUMetric{Source: "NVIDIASMI", Timestamp: time.Now(), GPUMemoryUsedMB: 1024, GPUMemoryTotalMB: 2048, GPUMemoryPercent: 50, GPUUtilizationPercent: 90}, nil
 }
 func TestRunnerUsesRealCollector(t *testing.T) {
-	s := snapshotFromCollector(fakeCollector{}, "gpu_oom", 0)
+	s := snapshotFromCollector(fakeCollector{}, metrics.NewSimulatedCollector("gpu_oom"))
 	if s.Source != "NVIDIASMI" || s.GPUMemoryUsed != 1024 || s.GPUUtilization != 90 {
 		t.Fatal(s)
 	}
@@ -56,9 +56,47 @@ func TestLongLogLineIsNotTruncated(t *testing.T) {
 	text := strings.Repeat("x", 100000) + "\nRuntimeError: CUDA out of memory\n"
 	var buffer bytes.Buffer
 	var mu sync.Mutex
-	streamOutput(strings.NewReader(text), &buffer, &mu, "test")
+	writer := &lockedLogWriter{buffer: &buffer, mutex: &mu}
+	if n, err := writer.Write([]byte(text)); err != nil || n != len(text) {
+		t.Fatalf("write failed: n=%d err=%v", n, err)
+	}
 	if buffer.String() != text {
 		t.Fatal("logs were truncated")
+	}
+}
+
+func TestLogWriterKeepsBoundedTail(t *testing.T) {
+	var buffer bytes.Buffer
+	var mu sync.Mutex
+	writer := &lockedLogWriter{buffer: &buffer, mutex: &mu}
+	text := strings.Repeat("x", 300*1024) + "\nRuntimeError: CUDA out of memory\n"
+	n, err := writer.Write([]byte(text))
+	if err != nil || n != len(text) {
+		t.Fatalf("write failed: n=%d err=%v", n, err)
+	}
+	if buffer.String() != text[len(text)-256*1024:] {
+		t.Fatal("writer did not retain bounded log tail")
+	}
+}
+
+func TestLogWriterConcurrentStreams(t *testing.T) {
+	var buffer bytes.Buffer
+	var mu sync.Mutex
+	writer := &lockedLogWriter{buffer: &buffer, mutex: &mu}
+	var wg sync.WaitGroup
+	for _, text := range []string{"stdout\n", "stderr\n"} {
+		wg.Add(1)
+		go func(text string) {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				writer.Write([]byte(text))
+			}
+		}(text)
+	}
+	wg.Wait()
+	logs := buffer.String()
+	if strings.Count(logs, "stdout\n") != 1000 || strings.Count(logs, "stderr\n") != 1000 {
+		t.Fatal("concurrent log writes lost or mixed chunks")
 	}
 }
 
@@ -157,5 +195,20 @@ func TestTelemetryVisibleBeforeCompletion(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no telemetry before process exit")
+	}
+}
+
+type failingCollector struct{ fakeCollector }
+
+func (failingCollector) Collect() (*metrics.GPUMetric, error) {
+	return nil, fmt.Errorf("GPU unavailable")
+}
+func TestRunnerFallbackUsesSharedSimulation(t *testing.T) {
+	fallback := metrics.NewSimulatedCollector("gpu_oom")
+	for _, percent := range []float64{20, 45, 70} {
+		sample := snapshotFromCollector(failingCollector{}, fallback)
+		if sample.Source != "Simulated" || sample.GPUMemoryPercent != percent {
+			t.Fatalf("unexpected fallback: %+v", sample)
+		}
 	}
 }

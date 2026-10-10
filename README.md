@@ -32,9 +32,13 @@
   - Evidence extraction from logs
   - Recommended fixes with retry safety assessment
   - Prevention strategies
-- **Universal GPU Support**: Auto-detects NVIDIA (nvidia-smi) or AMD (rocm-smi) GPUs
+- **Universal GPU Support**:
+  - Backend auto-detects NVIDIA (nvidia-smi) or AMD (rocm-smi) for demo job metrics
+  - SDK supports NVIDIA CUDA, AMD ROCm, and Apple MPS on client side
+  - Select one GPU per tracked run, with CUDA_VISIBLE_DEVICES support
+  - Device metadata (UUID, index, name) identifies the selected GPU when available
 - **Real-time Metrics**: Live GPU memory, utilization, temperature monitoring, and automatic calculation of wasted GPU-seconds
-  - *Note: Demo jobs use real NVIDIA/ROCm metrics when available, otherwise explicitly tagged simulated metrics. Workloads tracked with the SDK record live GPU memory (NVIDIA and ROCm), plus utilization and temperature on NVIDIA when `nvidia-ml-py` is installed.*
+  - *Note: Backend demo jobs use scenario-based simulation with some randomized values, or real GPU metrics when available. SDK workloads record live metrics from the actual training environment.*
 
 ###  Jupyter Notebook Integration
 CrashLens provides first-class support for Jupyter notebooks:
@@ -56,7 +60,7 @@ CrashLens provides an optional MCP server that lets Claude Desktop and other MCP
 - `get_workload_summary` - Get complete workload metadata
 
 **Two separate AI integration paths:**
-1. **Backend AI Diagnosis**: When you call `POST /workloads/{id}/diagnose`, the Go backend sends logs and metrics directly to Fireworks AI (configured with `FIREWORKS_API_KEY` and `FIREWORKS_MODEL`). This produces the failure reports stored in the database.
+1. **Backend Diagnosis**: `POST /workloads/{id}/diagnose` analyzes a failed workload. Ordinary users supply their own Fireworks key and tool-capable model through the dashboard, SDK, or request headers. Operator requests may use backend `FIREWORKS_API_KEY` and `FIREWORKS_MODEL`, which must both be configured. A saved AI report is returned without another inference call unless `?refresh=true` is supplied.
 2. **MCP Client Queries**: External tools like Claude Desktop can use the MCP server to retrieve these reports and other workload data. The MCP server calls the CrashLens REST API.
 
 See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed tool specifications.
@@ -73,8 +77,16 @@ See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed to
                   │
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│            Log + GPU Metric Collector                       │
-│   (nvidia-smi / rocm-smi with simulated fallback)           │
+│            SDK GPU Metric Collector                         │
+│   (NVIDIA NVML/CUDA, AMD ROCm, Apple MPS)                   │
+│   Live metrics uploaded every 2 seconds                     │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│               Backend API (Go)                              │
+│   State validation, metric storage, demo job runner         │
+│   Backend GPU: nvidia-smi/rocm-smi detection                │
 └─────────────────┬───────────────────────────────────────────┘
                   │
                   ▼
@@ -85,7 +97,7 @@ See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed to
                   │
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│             Fireworks AI model                              │
+│             Fireworks AI (BYOK)                             │
 │        (Root cause + Fixes + Prevention)                    │
 └─────────────────┬───────────────────────────────────────────┘
                   │
@@ -102,47 +114,66 @@ See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed to
 
 ```
 ML-Failure-Doctor/
-├── backend/                    # Go backend API
-│   ├── main.go                 
-│   ├── api/                    
-│   │   └── handlers.go
-│   ├── db/                     
-│   │   └── database.go
-│   ├── fireworks/              
-│   │   └── client.go
-│   ├── metrics/                
-│   │   └── collector.go        
-│   ├── classifier/             
-│   │   └── classifier.go
-│   ├── diagnosis/             
-│   │   └── diagnosis.go
-│   ├── runner/                
-│   │   └── runner.go
+├── backend/
+│   ├── main.go
+│   ├── api/
+│   │   ├── handlers.go
+│   │   ├── handlers_test.go
+│   │   ├── validation.go
+│   │   └── validation_test.go
+│   ├── db/
+│   │   ├── database.go
+│   │   └── database_test.go
+│   ├── fireworks/
+│   │   ├── client.go
+│   │   └── client_test.go
+│   ├── metrics/
+│   │   ├── collector.go
+│   │   └── collector_test.go
+│   ├── classifier/
+│   │   ├── classifier.go
+│   │   └── classifier_test.go
+│   ├── diagnosis/
+│   │   ├── diagnosis.go
+│   │   └── diagnosis_test.go
+│   ├── runner/
+│   │   ├── runner.go
+│   │   └── runner_test.go
 │   └── go.mod
 │
-├── frontend/                   # Next.js dashboard
+├── frontend/
 │   ├── app/
 │   │   ├── page.tsx
-│   │   ├── dashboard/          
+│   │   ├── dashboard/
 │   │   │   └── page.tsx
-│   │   └── workloads/[id]/     
+│   │   └── workloads/[id]/
 │   │       └── page.tsx
-│   ├── components/            
+│   ├── components/
 │   ├── lib/
-│   │   └── api.ts              
+│   │   └── api.ts
 │   └── package.json
 │
-├── crashlens-sdk/              # Python SDK
+├── crashlens-sdk/
 │   ├── crashlens/
 │   │   ├── __init__.py
-│   │   └── workload_tracker.py 
-│   └── setup.py
+│   │   ├── workload_tracker.py
+│   │   ├── metrics.py
+│   │   └── jupyter.py
+│   ├── tests/
+│   │   ├── test_tracking.py
+│   │   ├── test_mps.py
+│   │   └── test_regressions.py
+│   ├── setup.py
+│   └── README.md
 │
-├── jobs/                       
-│   ├── gpu_oom.py
-│   ├── dependency_error.py
-│   ├── missing_checkpoint.py
-│   └── successful_training.py
+├── mcp-server/
+│   ├── server.js
+│   ├── package.json
+│   └── README.md
+│
+├── scripts/
+│   ├── validate_gpu.py
+│   └── manage_keys.py
 │
 ├── docker-compose.yml
 ├── Dockerfile
@@ -169,13 +200,15 @@ ML-Failure-Doctor/
 
 #### Option A: Docker (Recommended for Quick Testing)
 - **Docker** and **Docker Compose** installed
-- **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
+- **Fireworks credentials** (optional): Your API key and a tool-capable model identifier for AI-assisted diagnosis. Rule-based diagnosis requires neither.
 
 #### Option B: Local Development
 - **Go** 1.26+ ([Download](https://go.dev/dl/))
 - **Node.js** 20.9+ ([Download](https://nodejs.org/))
-- **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
-- **AMD ROCm** (optional, for real GPU metrics on AMD hardware)
+- **Fireworks credentials** (optional): Your API key and a tool-capable model identifier for AI-assisted diagnosis. Rule-based diagnosis requires neither.
+- **Python 3** to execute the backend’s demo scripts; Python and the SDK are also needed on the machine running your own workloads
+- **C compiler** with CGO enabled for the Go SQLite dependency (Xcode Command Line Tools on macOS, or GCC/build tools on Linux)
+- **GPU runtime** (optional): CUDA, ROCm, or a PyTorch installation supporting Apple MPS, installed on the machine running your workloads
 
 ---
 
@@ -188,9 +221,10 @@ ML-Failure-Doctor/
 git clone https://github.com/kavinsaravan/ML-Failure-Doctor.git
 cd ML-Failure-Doctor
 
-# 2. Create environment file with your Fireworks AI API key
+# 2. Create an environment file
 cp .env.example .env
-# Optional: set FIREWORKS_API_KEY and FIREWORKS_MODEL in .env for AI diagnosis
+# Optional: set BOTH FIREWORKS_API_KEY and FIREWORKS_MODEL for operator AI diagnosis
+# Workspace users supply their own Fireworks credentials in the dashboard or SDK
 
 # 3. Start all services (backend, frontend, database)
 docker compose up --build -d
@@ -209,9 +243,10 @@ open http://localhost:3000
 -  **Health Check**: http://localhost:8080/health
 -  **Database**: SQLite (auto-created in Docker volume)
 
-Demo scripts are packaged in the backend image. SQLite is stored in the named
-`crashlens-data` volume, which survives container recreation and `docker compose down`.
-`docker compose down -v` deletes the stored workloads.
+Demo scripts are packaged in the Docker image built from the root `Dockerfile`.
+SQLite is stored in the named `crashlens-data` volume, which survives container
+recreation and `docker compose down`. Use `docker compose down -v` to delete
+stored workloads.
 
 `NEXT_PUBLIC_API_URL` must be reachable from the browser. For a remote host, set it
 to that host's backend URL in `.env` and rebuild with `docker compose up --build -d`.
@@ -243,13 +278,18 @@ cd backend
 # Download Go dependencies
 go mod download
 
-# Set your Fireworks AI API key (get free key at fireworks.ai)
+# Optional: operator-only AI diagnosis (both values are required)
 export FIREWORKS_API_KEY="your_fireworks_api_key_here"
+export FIREWORKS_MODEL="accounts/fireworks/models/YOUR_TOOL_CAPABLE_MODEL"
+
+# Configure an operator key for key management; required in production
+export CRASHLENS_API_KEY="your_secure_operator_key"
+# Users create separate workspace keys through the dashboard
 
 # Start the backend server (runs on port 8080)
 go run .
 
-# You should see: "CrashLens Backend starting on port 8080"
+# You should see: "CrashLens backend on port 8080 (private access)"
 ```
 
 **Keep this terminal open and running.**
@@ -316,47 +356,114 @@ See [MCP Server Documentation](./mcp-server/README.md) for more details.
 
 **Base URL**: `http://localhost:8080` (local) or your deployed backend URL
 
+Authenticated requests use `Authorization: Bearer <CrashLens workspace key>`.
+Workload operations and statistics are restricted to the connected workspace.
+`/health` and workspace creation are public; key management requires the operator key.
+
 ### Workloads
 ```http
-GET    /workloads               # List all GPU workloads
+GET    /workloads               # List workloads in the connected workspace
 POST   /workloads               # Create a new workload
-POST   /workloads/run           # Create and run workload from template
+POST   /workloads/run           # Queue a predefined demo template
 GET    /workloads/{id}          # Get workload details with metrics
 PUT    /workloads/{id}          # Update workload status/data
 DELETE /workloads/{id}          # Delete a workload
+DELETE /workloads/clear         # Clear the connected workspace’s workloads
 GET    /workloads/{id}/logs     # Get workload execution logs
 GET    /workloads/{id}/metrics  # Get GPU metrics for workload
-POST   /workloads/{id}/diagnose # Run AI diagnosis on failure
+POST   /workloads/{id}/diagnose # Diagnose a failed workload using AI or rules
 ```
 
 ### Statistics
 ```http
-GET    /summary                 # Platform-wide statistics and metrics
+GET    /summary                 # Workspace statistics; backend_gpu_platform identifies the backend host
 ```
 
 ### Health
 ```http
-GET    /health                  # Service health check (returns {"status":"ok"})
+GET    /health                  # Status, auth_required, access_mode, workspace_creation_enabled
 ```
+
+### Workspaces and Access
+```http
+POST   /workspaces              # Public creation of a new private workspace; returns a key once
+GET    /session                 # Validate the connected key and retrieve its owner/admin status
+```
+
+### Operator Key Management
+```http
+POST   /api-keys                # Issue a user key: {"name":"Alice"}, optionally existing owner_id
+GET    /api-keys                # List issued key metadata (never secrets)
+DELETE /api-keys/{id}           # Revoke a user key
+```
+
+For new workspaces, send `{ "name": "My workspace" }` to `POST /workspaces`.
+Creation can be disabled with `ALLOW_WORKSPACE_CREATION=false`.
+The operator key manages keys and accesses legacy workloads; it does not grant
+cross-workspace workload access. See [Authentication & Multi-Tenancy](#authentication--multi-tenancy).
+
+### API Validation
+
+The backend enforces comprehensive input validation:
+
+**State Transitions:**
+- Only valid status transitions are allowed (e.g., `pending` → `running` → `failed/succeeded`)
+- Completed workloads (`failed` or `succeeded`) cannot revert to `running` or `pending`
+- Invalid transitions return HTTP 409 Conflict
+
+**GPU Metrics:**
+- Maximum 300 samples per update request
+- Required fields: `gpu_memory_used_mb`, `gpu_memory_total_mb`, `gpu_memory_percent`
+- Numeric validation: utilization 0-100%, memory values non-negative
+- Metrics must be valid JSON array of objects
+
+**Workload Identity:**
+- Workload `name` and `type` cannot be changed after creation
+- Runtime and wasted GPU seconds must be non-negative
+- Type must be `ML_JOB`
 
 **Example API Calls:**
 
 ```bash
-# Create a workload
-curl -X POST http://localhost:8080/workloads \
+export CRASHLENS_URL="http://localhost:8080"
+# Use the personal workspace key returned by the dashboard or POST /workspaces
+export CRASHLENS_API_KEY="YOUR_WORKSPACE_KEY"
+
+# Create a workload; save the numeric id returned in the response
+curl -X POST "$CRASHLENS_URL/workloads" \
+  -H "Authorization: Bearer $CRASHLENS_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Training Job",
-    "type": "ML_JOB",
-    "status": "running"
-  }'
+  -d '{"name":"Training Job","type":"ML_JOB","status":"running"}'
 
-# Get AI diagnosis for a failed workload
-curl -X POST http://localhost:8080/workloads/1/diagnose
+# Replace this with the actual id from the previous response
+export WORKLOAD_ID="123"
 
-# List all workloads
-curl http://localhost:8080/workloads
+# Record a failure before requesting diagnosis
+curl -X PUT "$CRASHLENS_URL/workloads/$WORKLOAD_ID" \
+  -H "Authorization: Bearer $CRASHLENS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"failed","exit_code":1,"runtime_seconds":4,"job_logs":"RuntimeError: CUDA out of memory"}'
+
+# Rule-based diagnosis; also returns an existing cached AI report if present
+curl -X POST "$CRASHLENS_URL/workloads/$WORKLOAD_ID/diagnose" \
+  -H "Authorization: Bearer $CRASHLENS_API_KEY"
+
+# Optional AI diagnosis: set your own Fireworks credentials before this request
+curl -X POST "$CRASHLENS_URL/workloads/$WORKLOAD_ID/diagnose" \
+  -H "Authorization: Bearer $CRASHLENS_API_KEY" \
+  -H "X-Fireworks-API-Key: $FIREWORKS_API_KEY" \
+  -H "X-Fireworks-Model: $FIREWORKS_MODEL"
+
+# List workloads in your workspace
+curl "$CRASHLENS_URL/workloads" \
+  -H "Authorization: Bearer $CRASHLENS_API_KEY"
 ```
+
+AI diagnosis requires a tool-capable model that your Fireworks account can access.
+If inference fails, the backend returns a rule-based report with an
+`ai_unavailable_reason`. Add `?refresh=true` to explicitly regenerate a cached AI
+report; a successful inference consumes the supplied account’s credits.
+
 ---
 
 ### Environment Variables
@@ -368,121 +475,89 @@ NEXT_PUBLIC_API_URL=http://localhost:8080  # Local development
 NEXT_PUBLIC_API_URL=https://your-backend-url.com  # Production
 ```
 
-**Backend** (set in shell or Docker):
+**Backend** (set in the shell or your deployment; Compose reads the root `.env`):
 ```env
-FIREWORKS_API_KEY=your_fireworks_api_key_here
-PORT=8080  # Optional, defaults to 8080
+# Operator credential: required in production, never distribute it to users
+CRASHLENS_API_KEY=your_secure_operator_key
+
+# Optional operator AI diagnosis; both are required to enable it
+FIREWORKS_API_KEY=
+FIREWORKS_MODEL=
+
+PORT=8080
+DATABASE_PATH=./crashlens.db
+ACCESS_MODE=private
+APP_ENV=development
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
+ALLOW_WORKSPACE_CREATION=true
+TRUSTED_PROXY_CIDRS=
+JOB_CONCURRENCY=2
+JOB_QUEUE_SIZE=16
+JOB_TIMEOUT_SECONDS=300
 ```
+
 
 ---
 
-## Apple GPU tracking (Metal / MPS)
+## Apple GPU Tracking (Metal / MPS)
 
-Run the SDK natively on a Mac with MPS-capable PyTorch; Docker Desktop does not
-expose the Apple GPU to the Linux backend. The API can run locally or remotely.
-In a Python virtual environment:
+The SDK supports Apple Silicon GPUs via MPS (Metal Performance Shaders). Docker Desktop does not expose the Apple GPU to Linux containers, so run the SDK natively on your Mac.
 
+**Setup:**
 ```bash
 python -m pip install torch -e ./crashlens-sdk
 export CRASHLENS_URL=http://localhost:8080
-# Set CRASHLENS_API_KEY when the backend requires authentication.
+export CRASHLENS_API_KEY=your_key_here  # If authentication is enabled
 python scripts/validate_gpu.py --device mps
 ```
 
-Use `model.to("mps")` and move training tensors to `mps` inside your usual
-`WorkloadTracker.track(...)` block. The tracker detects MPS automatically.
-The validation command trains for ten seconds and requires live `torch.mps`
-samples at the API. It refuses CPU fallback; it does not simulate GPU success.
-
-MPS samples report process Metal driver allocations (including caches), tensor
-allocations, and the recommended maximum working set. The legacy total-memory
-field represents that working-set recommendation, **not physical VRAM**. Ratios
-can exceed 100%. Utilization, temperature, and an exact allocation peak are not
-available and are not fabricated. Sampling can miss short-lived allocations.
-MPS OOM messages are classified as GPU_OUT_OF_MEMORY. GPU memory APIs follow
-[PyTorch's MPS documentation](https://docs.pytorch.org/docs/stable/mps.html).
-
-## Individual API keys and private workloads
-
-Each issued CrashLens key identifies an owner. The API restricts lists, details,
-logs, metrics, summaries, updates, diagnoses, template runs, and deletion to that
-owner. Enter the user key in the dashboard and use the same key in the SDK or MCP
-client. Users cannot select ownership through request payloads. No signup or
-password login is required.
-
-`CRASHLENS_API_KEY` is the operator key: keep it private. It can issue and revoke
-user keys and retains access to preexisting workloads in the legacy workspace.
-It does not provide cross-owner workload access. User secrets are generated with
-cryptographic randomness and stored only as SHA-256 hashes; they are returned once
-at issuance. Keep the SQLite database on persistent storage, since it stores both
-workloads and key records. Existing data is migrated automatically.
-
-Issue a separate key for each person (the command prompts for your operator key):
-
-```bash
-python scripts/manage_keys.py --api-url https://YOUR-BACKEND issue Alice
-python scripts/manage_keys.py --api-url https://YOUR-BACKEND list
-python scripts/manage_keys.py --api-url https://YOUR-BACKEND revoke KEY_ID
-```
-
-The returned `api_key` is what Alice enters in her SDK and dashboard. To replace
-her key while retaining her workloads, issue with `--owner-id OWNER_ID`, then
-revoke the old key. Revocation blocks subsequent requests and preserves the data.
-The list endpoint never returns secrets or hashes. Operator endpoints are
-`POST /api-keys`, `GET /api-keys`, and `DELETE /api-keys/{id}`.
-
-Once any individual keys have been issued, anonymous access is disabled even in
-`ACCESS_MODE=demo`; authenticated keys always see only their own workloads. For
-public hosting use production mode and private access. This feature isolates
-data; per-user spending quotas are not included. User AI diagnoses require their own
-Fireworks credentials as described below.
-
-## Use your own Fireworks credits
-
-Connect with your individual CrashLens key, then enter your Fireworks key and an
-exact tool-capable model identifier in the dashboard's Fireworks settings. Keys
-stay in browser memory (not localStorage), are cleared on disconnect/session
-expiration, and are sent only on diagnosis requests. Re-enter them after refresh.
-Use HTTPS for deployed APIs. Choose a serverless model accessible to your account.
-Setting credentials does not call Fireworks; a fresh diagnosis does.
-
-SDK example (also supported by JupyterWorkloadTracker):
-
+**Usage:**
 ```python
-tracker = WorkloadTracker(
-    os.environ["CRASHLENS_URL"],
-    api_key=os.environ["CRASHLENS_API_KEY"],
-    fireworks_api_key=os.environ["FIREWORKS_API_KEY"],
-    fireworks_model=os.environ["FIREWORKS_MODEL"],
-)
-report = tracker.diagnose(workload_id)
+# The tracker detects MPS automatically
+with tracker.track("Training") as workload_id:
+    model = model.to("mps")
+    train(model)
 ```
 
-Diagnosis requests carry `X-Fireworks-API-Key` and `X-Fireworks-Model` headers.
-The backend creates a request-scoped client to the fixed Fireworks endpoint;
-credentials are never stored in SQLite or included in reports or server logs.
-Your key is sent to CrashLens and Fireworks, so only use a backend you trust.
-User workloads without a Fireworks key get rule-based reports, never the
-operator's credits. Failed user requests also never fall back to the operator's
-account. The operator key can still use backend FIREWORKS_API_KEY/FIREWORKS_MODEL
-for the legacy workspace. Saved AI reports are reused; Re-run Diagnosis makes a
-fresh request with the supplied credentials. Jupyter magic initialization reads
-Fireworks credentials from environment variables, never magic-line arguments.
+**MPS Metrics:**
+- **Driver Memory**: Metal driver allocations (including caches)
+- **Tensor Memory**: Actual PyTorch tensor allocations
+- **Working Set**: Apple's recommended maximum (**not physical VRAM**)
+- **Percentage**: Relative to working set (can exceed 100%)
 
-## Self-service workspaces
+**Limitations**: Utilization, temperature, and exact peak allocation are unavailable from Apple's APIs and are not simulated. See [PyTorch MPS docs](https://docs.pytorch.org/docs/stable/mps.html) for details.
 
-New visitors open the dashboard and select **Create my workspace**. They enter a
-workspace label, receive a randomly generated CrashLens key once, and connect
-immediately. The key identifies a new private owner; it cannot claim an existing
-workspace or grant operator privileges. Save it to reconnect after a refresh and
-use it in the SDK. Anyone with the key shares the workspace. There is no email,
-password, or self-service recovery. Labels are descriptive and not identities.
 
-Public `POST /workspaces` accepts only `{ "name": "My workspace" }`. Secrets
-remain hashed in the database and are never listed later. Creation is limited to
-3 requests/minute per IP (burst 1) and 10/minute globally (burst 5), per backend
-process. Forwarded IPs require explicit trusted proxy configuration. Set
-`ALLOW_WORKSPACE_CREATION=false` to disable public creation while retaining
-operator issuance and existing keys. Run one backend process per SQLite database.
-Users supply their own Fireworks credentials; creation makes no paid AI calls.
-The database volume must persist keys and workload ownership across deployments.
+## Authentication & Multi-Tenancy
+
+CrashLens supports private workspaces with API key-based isolation. Each key identifies an owner, and the API restricts all operations (list, view, update, delete, diagnose) to that owner's workloads.
+
+For operator key issuance, revocation, rotation, and security guidance, see
+[Operator Key Management](./PRODUCTION_SETUP.md#operator-key-management).
+
+### Bring Your Own AI Key (BYOK)
+
+Users can provide their own Fireworks credentials for AI-powered diagnosis instead of using shared credits.
+
+**Dashboard setup:**
+1. Connect with your CrashLens API key
+2. Enter your Fireworks key and model in the dashboard's Fireworks settings
+3. Credentials stay in browser memory only (not localStorage)
+4. Re-enter after refresh or session expiration
+
+
+### Self-Service Workspaces
+
+Users can create their own workspaces directly from the dashboard without operator intervention.
+
+**How it works:**
+1. Open the dashboard and select **Create my workspace**
+2. Enter a workspace label (descriptive only, not an identity)
+3. Receive a randomly generated CrashLens key (shown once)
+4. Use the key in the dashboard and SDK
+
+**Important:**
+- Keys cannot claim existing workspaces or grant operator privileges
+- No email, password, or self-service recovery
+- Anyone with the key can access the workspace
+- Users provide their own Fireworks credentials for AI diagnosis

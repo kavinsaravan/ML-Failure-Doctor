@@ -393,3 +393,22 @@ CrashLens Backend (REST API)
        ↓
 Dashboard (view workload, diagnose)
 ```    
+
+### GPU selection and concurrent runs
+
+Set `device="cuda:1"` on `WorkloadTracker`, `JupyterWorkloadTracker`, or
+`crashlens.init()` to monitor a specific logical CUDA/ROCm device. Configure
+`CUDA_VISIBLE_DEVICES` before starting Python. Without an explicit selection,
+the sampler captures PyTorch's current CUDA device when tracking starts.
+Set the training code to use the same device; this option only selects telemetry.
+Use `device="mps"` for Apple GPU telemetry. Samples include device identifiers
+when available. NVIDIA UUID mapping respects CUDA visibility; if mapping is
+unavailable, the SDK uses PyTorch memory telemetry rather than guessing a GPU.
+Without PyTorch, an explicit NVIDIA GPU/MIG UUID can select an NVML device;
+a numeric physical index is used only when CUDA visibility/order is unset.
+One selected GPU is monitored per run; distributed multi-GPU aggregation is not implemented.
+
+Only one tracking context may be active per Python process. Nested or overlapping
+contexts raise `RuntimeError` before creating another workload. Use separate
+processes for concurrent workloads. Capture remains process-wide, so unrelated
+threads that print during a tracked run can appear in its logs.

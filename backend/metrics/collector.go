@@ -191,86 +191,51 @@ func (c *NVIDIASMICollector) Collect() (*GPUMetric, error) {
 	}, nil
 }
 
-// SimulatedCollector generates realistic simulated metrics for demo purposes
+// SimulatedCollector generates explicitly labeled demo telemetry.
+// Each workload owns its collector so progression is independent of other jobs.
 type SimulatedCollector struct {
-	baseMemoryMB  float64
-	totalMemoryMB float64
-	trend         string // "increasing", "stable", "oom"
-	step          int
+	scenario string
+	step     int
 }
 
-// NewSimulatedCollector creates a collector that generates demo metrics
 func NewSimulatedCollector(scenario string) *SimulatedCollector {
-	totalMemory := 24576.0 // 24GB AMD MI250X
-
-	collector := &SimulatedCollector{
-		totalMemoryMB: totalMemory,
-		step:          0,
-	}
-
 	switch scenario {
 	case "oom":
-		collector.baseMemoryMB = totalMemory * 0.75
-		collector.trend = "oom"
+		scenario = "gpu_oom"
 	case "stable":
-		collector.baseMemoryMB = totalMemory * 0.45
-		collector.trend = "stable"
-	default:
-		collector.baseMemoryMB = totalMemory * 0.40
-		collector.trend = "increasing"
+		scenario = "successful"
 	}
-
-	return collector
+	return &SimulatedCollector{scenario: scenario}
 }
-
-func (c *SimulatedCollector) IsAvailable() bool {
-	return true
-}
-
-func (c *SimulatedCollector) Name() string {
-	return "Simulated"
-}
-
+func (c *SimulatedCollector) IsAvailable() bool { return true }
+func (c *SimulatedCollector) Name() string      { return "Simulated" }
 func (c *SimulatedCollector) Collect() (*GPUMetric, error) {
+	iteration := c.step
 	c.step++
-
-	var memoryUsed float64
-	var utilization float64
-
-	switch c.trend {
-	case "oom":
-		// Gradually increase to OOM
-		memoryUsed = c.baseMemoryMB + (float64(c.step) * 400)
-		if memoryUsed > c.totalMemoryMB {
-			memoryUsed = c.totalMemoryMB * 0.97 // Almost full
+	memoryPercent, utilization := 0.0, 0.0
+	switch c.scenario {
+	case "gpu_oom":
+		memory := []float64{20, 45, 70, 85, 91, 95, 98, 99}
+		util := []float64{35, 62, 89, 95, 98, 99, 99, 99}
+		index := iteration
+		if index >= len(memory) {
+			index = len(memory) - 1
 		}
-		utilization = 85 + rand.Float64()*10
-
-	case "stable":
-		// Stable with small variations
-		memoryUsed = c.baseMemoryMB + (rand.Float64()-0.5)*1000
-		utilization = 70 + rand.Float64()*10
-
-	case "increasing":
-		// Gradually increasing but safe
-		memoryUsed = c.baseMemoryMB + (float64(c.step) * 200)
-		if memoryUsed > c.totalMemoryMB*0.85 {
-			memoryUsed = c.totalMemoryMB * 0.85
-		}
-		utilization = 60 + rand.Float64()*20
+		memoryPercent, utilization = memory[index], util[index]
+	case "timeout":
+		memoryPercent, utilization = 45, 5+rand.Float64()*3
+	case "successful":
+		memoryPercent, utilization = 40+float64(iteration%3)*5, 70+rand.Float64()*20
+	default:
+		memoryPercent, utilization = 30+rand.Float64()*40, 50+rand.Float64()*30
 	}
-
-	memoryPercent := (memoryUsed / c.totalMemoryMB) * 100
-	temperature := 60 + int(utilization/10) + rand.Intn(10)
-
+	// Demo capacity and temperature are synthetic, not hardware specifications.
+	const totalMemory = 24576.0
 	return &GPUMetric{
-		Timestamp:             time.Now(),
-		Source:                c.Name(),
-		GPUMemoryUsedMB:       memoryUsed,
-		GPUMemoryTotalMB:      c.totalMemoryMB,
-		GPUMemoryPercent:      memoryPercent,
-		GPUUtilizationPercent: utilization,
-		TemperatureCelsius:    temperature,
+		Timestamp: time.Now(), Source: c.Name(), GPUMemoryTotalMB: totalMemory,
+		GPUMemoryUsedMB:  memoryPercent / 100 * totalMemory,
+		GPUMemoryPercent: memoryPercent, GPUUtilizationPercent: utilization,
+		TemperatureCelsius: 65 + min(iteration, 10)*2,
 	}, nil
 }
 

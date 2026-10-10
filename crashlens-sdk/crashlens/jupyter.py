@@ -49,8 +49,8 @@ class JupyterWorkloadTracker(WorkloadTracker):
             model.fit(X_train, y_train, epochs=10)
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None):
-        super().__init__(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model)
+    def __init__(self, api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None):
+        super().__init__(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model, device=device)
         self.in_jupyter = self._check_jupyter()
 
     def _check_jupyter(self) -> bool:
@@ -259,9 +259,7 @@ class JupyterWorkloadTracker(WorkloadTracker):
         Returns:
             dict with root_cause, recommended_fixes, evidence, etc.
         """
-        response = requests.post(f"{self.api_url}/workloads/{workload_id}/diagnose", headers=self.headers, timeout=75)
-        response.raise_for_status()
-        diagnosis = response.json()
+        diagnosis = super().diagnose(workload_id)
 
         if display:
             self._display_diagnosis(diagnosis)

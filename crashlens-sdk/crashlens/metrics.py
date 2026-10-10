@@ -8,6 +8,7 @@ Collects GPU memory and utilization during training with:
 - Multi-vendor support (NVIDIA via pynvml, AMD/ROCm via torch.cuda, Apple via torch.mps)
 """
 
+import os
 import time
 import json
 from typing import List, Dict, Optional
@@ -30,7 +31,7 @@ class GPUMetricsSampler:
             metrics_json = sampler.to_json(samples)
     """
 
-    def __init__(self, interval: float = 2.0, max_samples: int = 300):
+    def __init__(self, interval: float = 2.0, max_samples: int = 300, device=None):
         self.interval = interval
         self.max_samples = max_samples
         self.samples = deque(maxlen=max_samples)
@@ -43,26 +44,57 @@ class GPUMetricsSampler:
         self.torch_cuda_available = False
         self.mps_available = False
 
+        self.device_index = None
+        self.device_id = None
+        self.device_name = None
+        cuda_detected = False
+        # Resolve the CUDA logical device on the calling thread, before sampling.
         try:
-            import pynvml
-            pynvml.nvmlInit()
-            self.pynvml = pynvml
-            self.nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            self.nvml_available = True
+            import torch
+            if device != "mps" and torch.cuda.is_available():
+                cuda_detected = True
+                self.torch = torch
+                index = torch.cuda.current_device() if device is None else int(str(device).replace("cuda:", "", 1))
+                props = torch.cuda.get_device_properties(index)
+                self.device_index = index
+                self.device_id = str(props.uuid) if getattr(props, "uuid", None) else None
+                self.device_name = props.name
+                self.torch_cuda_available = True
+            elif device in (None, "mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                self.torch = torch
+                self.mps_available = True
+                self.device_id = "mps:0"
+                self.device_name = "Apple MPS"
         except Exception:
-            # pynvml not available or no NVIDIA GPU
             pass
 
         try:
-            import torch
-            if torch.cuda.is_available():
-                self.torch = torch
-                self.torch_cuda_available = True
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                self.torch = torch
-                self.mps_available = True
+            import pynvml
+            if self.mps_available or device == "mps":
+                return
+            pynvml.nvmlInit()
+            self.pynvml = pynvml
+            if self.torch_cuda_available:
+                # UUID mapping respects CUDA visibility and device ordering. If
+                # unavailable, use torch telemetry rather than guessing an NVML index.
+                if not self.device_id:
+                    return
+                handle = pynvml.nvmlDeviceGetHandleByUUID(self.device_id)
+            elif cuda_detected and not (isinstance(device, str) and device.startswith(("GPU-", "MIG-"))):
+                return
+            elif isinstance(device, str) and device.startswith(("GPU-", "MIG-")):
+                handle = pynvml.nvmlDeviceGetHandleByUUID(device)
+            elif "CUDA_VISIBLE_DEVICES" not in os.environ and "CUDA_DEVICE_ORDER" not in os.environ:
+                handle = pynvml.nvmlDeviceGetHandleByIndex(0 if device is None else int(device))
+            else:
+                return
+            self.nvml_handle = handle
+            def text(value):
+                return value.decode() if isinstance(value, bytes) else str(value)
+            self.device_id = text(pynvml.nvmlDeviceGetUUID(handle))
+            self.device_name = text(pynvml.nvmlDeviceGetName(handle))
+            self.nvml_available = True
         except Exception:
-            # torch not available
             pass
 
     def start(self):
@@ -73,7 +105,7 @@ class GPUMetricsSampler:
         # Reset peak memory stats so we only track this run (important for notebooks)
         if self.torch_cuda_available:
             try:
-                self.torch.cuda.reset_peak_memory_stats()
+                self.torch.cuda.reset_peak_memory_stats(self.device_index)
             except Exception:
                 pass
 
@@ -129,7 +161,10 @@ class GPUMetricsSampler:
 
             # Try NVIDIA first (most detailed)
             if self.nvml_available:
-                return self._collect_nvidia(timestamp)
+                try:
+                    return self._collect_nvidia(timestamp)
+                except Exception:
+                    pass
 
             # Fall back to torch.cuda (works on AMD ROCm too)
             if self.torch_cuda_available:
@@ -159,6 +194,9 @@ class GPUMetricsSampler:
 
         return {
             "timestamp": timestamp,
+            "device_id": self.device_id,
+            "device_index": self.device_index,
+            "device_name": self.device_name,
             "gpu_memory_used_mb": mem_info.used / (1024 ** 2),
             "gpu_memory_total_mb": mem_info.total / (1024 ** 2),
             "gpu_memory_percent": (mem_info.used / mem_info.total) * 100,
@@ -174,17 +212,20 @@ class GPUMetricsSampler:
         Uses mem_get_info() for device-wide stats (matches what nvidia-smi shows)
         """
         # Device-wide memory (includes cached blocks and CUDA context)
-        free_bytes, total_bytes = self.torch.cuda.mem_get_info(0)
+        free_bytes, total_bytes = self.torch.cuda.mem_get_info(self.device_index)
         used_bytes = total_bytes - free_bytes
 
         used_mb = used_bytes / (1024 ** 2)
         total_mb = total_bytes / (1024 ** 2)
 
         # Peak allocated since last reset - captures OOM spikes between samples
-        peak_allocated_mb = self.torch.cuda.max_memory_allocated(0) / (1024 ** 2)
+        peak_allocated_mb = self.torch.cuda.max_memory_allocated(self.device_index) / (1024 ** 2)
 
         return {
             "timestamp": timestamp,
+            "device_id": self.device_id,
+            "device_index": self.device_index,
+            "device_name": self.device_name,
             "gpu_memory_used_mb": used_mb,
             "gpu_memory_total_mb": total_mb,
             "gpu_memory_percent": (used_mb / total_mb * 100) if total_mb > 0 else 0,
@@ -204,6 +245,9 @@ class GPUMetricsSampler:
             return None
         return {
             "timestamp": timestamp,
+            "device_id": self.device_id,
+            "device_index": self.device_index,
+            "device_name": self.device_name,
             "gpu_memory_used_mb": used / (1024 ** 2),
             "gpu_memory_total_mb": recommended / (1024 ** 2),
             "gpu_memory_percent": used / recommended * 100,

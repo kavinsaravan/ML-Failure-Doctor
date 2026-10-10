@@ -54,6 +54,16 @@ func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		req.Status = "pending"
 	}
 
+	req.Name = strings.TrimSpace(req.Name)
+	if err := validateIdentity(req.Name, req.Type); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	if !validStatus(req.Status) {
+		http.Error(w, "Invalid status", 400)
+		return
+	}
+
 	// Create workload
 	id, err := s.DB.CreateWorkload(req.Name, req.Type, req.Status, middleware.RequestIdentity(r).Owner)
 	if err != nil {
@@ -114,9 +124,13 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateUpdates(updates); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	previousStatus := existing.Status
-	if updates.Status == "running" && (existing.Status == "failed" || existing.Status == "succeeded") {
-		http.Error(w, "Completed workloads cannot return to running", http.StatusConflict)
+	if !validTransition(existing.Status, updates.Status) {
+		http.Error(w, "Invalid workload status transition", http.StatusConflict)
 		return
 	}
 	// Reports are invalidated whenever their input changes.
@@ -245,6 +259,11 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		req.Name = "Test Job: " + req.Template
 	}
 
+	req.Name = strings.TrimSpace(req.Name)
+	if err := validateIdentity(req.Name, req.Type); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	jobsDir := os.Getenv("JOBS_DIR")
 	if jobsDir == "" {
 		jobsDir = "./jobs"

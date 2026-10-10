@@ -262,7 +262,7 @@ func (db *DB) GetStats(owner ...string) (map[string]interface{}, error) {
 		return nil, err
 	}
 	stats["failure_types"] = failureTypes
-	stats["gpu_platform"] = metrics.GetCollector("").Name()
+	stats["backend_gpu_platform"] = metrics.GetCollector("").Name()
 	return stats, nil
 }
 

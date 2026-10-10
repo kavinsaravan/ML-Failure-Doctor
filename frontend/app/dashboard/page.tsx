@@ -125,14 +125,14 @@ export default function Dashboard() {
           </Link>
           <div className="flex items-center justify-center gap-3 mb-3">
             <h1 className="text-4xl font-bold text-white">CrashLens Dashboard</h1>
-            {stats?.gpu_platform === 'NVIDIASMI' && (
+            {stats?.backend_gpu_platform === 'NVIDIASMI' && (
               <span className="px-3 py-1 text-white text-sm font-semibold rounded bg-green-600">
-                NVIDIA CUDA
+                Backend GPU: NVIDIA CUDA
               </span>
             )}
-            {stats?.gpu_platform === 'ROCmSMI' && (
+            {stats?.backend_gpu_platform === 'ROCmSMI' && (
               <span className="px-3 py-1 text-white text-sm font-semibold rounded bg-red-600">
-                AMD ROCm
+                Backend GPU: AMD ROCm
               </span>
             )}
           </div>

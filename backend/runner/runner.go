@@ -5,9 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"math/rand"
 	"os/exec"
 	"strings"
 	"sync"
@@ -216,39 +214,20 @@ func (w *lockedLogWriter) Write(chunk []byte) (int, error) {
 	return len(chunk), nil
 }
 
-// streamOutput reads from a pipe and writes to buffer with optional logging
-func streamOutput(reader io.Reader, buffer *bytes.Buffer, mutex *sync.Mutex, prefix string) {
-	chunk := make([]byte, 32*1024)
-	for {
-		n, err := reader.Read(chunk)
-		if n > 0 {
-			mutex.Lock()
-			buffer.Write(chunk[:n])
-			mutex.Unlock()
-		}
-		if err != nil {
-			if err != io.EOF {
-				log.Printf("%s log read failed: %v", prefix, err)
-			}
-			return
-		}
-	}
-}
-
 // collectMetricsToSlice periodically collects GPU metrics during job execution
-func collectMetricsToSlice(ctx context.Context, scriptPath string, metrics *[]MetricsSnapshot, mutex *sync.Mutex) {
+func collectMetricsToSlice(ctx context.Context, scriptPath string, samples *[]MetricsSnapshot, mutex *sync.Mutex) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	// Determine job type from script path for simulation
 	jobType := getJobType(scriptPath)
-	iteration := 0
+	collector := metrics.GetCollector(jobType)
+	fallback := metrics.NewSimulatedCollector(jobType)
 	if ctx.Err() == nil {
-		snapshot := collectGPUMetricsSnapshot(jobType, iteration)
+		snapshot := snapshotFromCollector(collector, fallback)
 		mutex.Lock()
-		*metrics = append(*metrics, snapshot)
+		*samples = append(*samples, snapshot)
 		mutex.Unlock()
-		iteration++
 	}
 
 	for {
@@ -256,14 +235,13 @@ func collectMetricsToSlice(ctx context.Context, scriptPath string, metrics *[]Me
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			snapshot := collectGPUMetricsSnapshot(jobType, iteration)
+			snapshot := snapshotFromCollector(collector, fallback)
 			mutex.Lock()
-			*metrics = append(*metrics, snapshot)
-			if len(*metrics) > 300 {
-				*metrics = append([]MetricsSnapshot{}, (*metrics)[len(*metrics)-300:]...)
+			*samples = append(*samples, snapshot)
+			if len(*samples) > 300 {
+				*samples = append([]MetricsSnapshot{}, (*samples)[len(*samples)-300:]...)
 			}
 			mutex.Unlock()
-			iteration++
 		}
 	}
 }
@@ -280,68 +258,13 @@ func getJobType(scriptPath string) string {
 	return "default"
 }
 
-// Use the same NVIDIA/ROCm collector implementations as platform detection.
-func collectGPUMetricsSnapshot(jobType string, iteration int) MetricsSnapshot {
-	return snapshotFromCollector(metrics.GetCollector(""), jobType, iteration)
-}
-
-func snapshotFromCollector(collector metrics.MetricCollector, jobType string, iteration int) MetricsSnapshot {
-	if collector.Name() != "Simulated" {
-		sample, err := collector.Collect()
-		if err == nil {
-			return MetricsSnapshot{Timestamp: sample.Timestamp, GPUMemoryUsed: sample.GPUMemoryUsedMB,
-				GPUMemoryTotal: sample.GPUMemoryTotalMB, GPUMemoryPercent: sample.GPUMemoryPercent,
-				GPUUtilization: sample.GPUUtilizationPercent, Temperature: float64(sample.TemperatureCelsius), Source: collector.Name()}
-		}
+// Adapt metrics from the shared collector implementation to the runner payload.
+func snapshotFromCollector(collector metrics.MetricCollector, fallback *metrics.SimulatedCollector) MetricsSnapshot {
+	sample, err := collector.Collect()
+	if err != nil {
+		sample, _ = fallback.Collect()
 	}
-	return simulateGPUMetrics(jobType, iteration)
-}
-
-// simulateGPUMetrics generates realistic GPU metrics for demo purposes
-func simulateGPUMetrics(jobType string, iteration int) MetricsSnapshot {
-	snapshot := MetricsSnapshot{
-		Timestamp:      time.Now(),
-		Source:         "Simulated",
-		GPUMemoryTotal: 24576, // 24GB AMD GPU
-		Temperature:    65.0 + float64(iteration)*2.0,
-	}
-
-	switch jobType {
-	case "gpu_oom":
-		// Simulate gradual memory increase leading to OOM
-		progress := []float64{20, 45, 70, 85, 91, 95, 98, 99}
-		utilization := []float64{35, 62, 89, 95, 98, 99, 99, 99}
-
-		idx := iteration
-		if idx >= len(progress) {
-			idx = len(progress) - 1
-		}
-
-		snapshot.GPUMemoryPercent = progress[idx]
-		snapshot.GPUUtilization = utilization[idx]
-		snapshot.GPUMemoryUsed = (snapshot.GPUMemoryPercent / 100.0) * snapshot.GPUMemoryTotal
-
-	case "timeout":
-		// Simulate stalled metrics
-		snapshot.GPUMemoryPercent = 45.0
-		snapshot.GPUUtilization = 5.0 + rand.Float64()*3.0 // Low, fluctuating
-		snapshot.GPUMemoryUsed = (snapshot.GPUMemoryPercent / 100.0) * snapshot.GPUMemoryTotal
-
-	case "successful":
-		// Simulate normal training with moderate resource usage
-		baseMemory := 40.0 + float64(iteration%3)*5.0
-		baseUtil := 70.0 + rand.Float64()*20.0
-
-		snapshot.GPUMemoryPercent = baseMemory
-		snapshot.GPUUtilization = baseUtil
-		snapshot.GPUMemoryUsed = (snapshot.GPUMemoryPercent / 100.0) * snapshot.GPUMemoryTotal
-
-	default:
-		// Default metrics for other job types
-		snapshot.GPUMemoryPercent = 30.0 + rand.Float64()*40.0
-		snapshot.GPUUtilization = 50.0 + rand.Float64()*30.0
-		snapshot.GPUMemoryUsed = (snapshot.GPUMemoryPercent / 100.0) * snapshot.GPUMemoryTotal
-	}
-
-	return snapshot
+	return MetricsSnapshot{Timestamp: sample.Timestamp, GPUMemoryUsed: sample.GPUMemoryUsedMB,
+		GPUMemoryTotal: sample.GPUMemoryTotalMB, GPUMemoryPercent: sample.GPUMemoryPercent,
+		GPUUtilization: sample.GPUUtilizationPercent, Temperature: float64(sample.TemperatureCelsius), Source: sample.Source}
 }

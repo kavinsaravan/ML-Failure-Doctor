@@ -1,4 +1,4 @@
-# Build from the repository root: docker build -f backend/Dockerfile .
+# Build from the repository root: docker build .
 FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache gcc musl-dev sqlite-dev
 WORKDIR /build

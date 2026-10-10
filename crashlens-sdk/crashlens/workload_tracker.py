@@ -19,6 +19,9 @@ except ImportError:
     METRICS_AVAILABLE = False
 
 
+_tracking_lock = Lock()
+
+
 class LogBuffer:
     """Bounded, thread-safe tail of captured output."""
     def __init__(self, limit=256 * 1024):
@@ -57,9 +60,10 @@ class WorkloadTracker:
             pass
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None, upload_interval: float = 2.0, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None):
+    def __init__(self, api_url: str, api_key: Optional[str] = None, upload_interval: float = 2.0, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None):
         if upload_interval <= 0:
             raise ValueError("upload_interval must be positive")
+        self.device = device
         self.fireworks_api_key = fireworks_api_key
         self.fireworks_model = fireworks_model
         self.upload_interval = upload_interval
@@ -118,6 +122,17 @@ class WorkloadTracker:
 
     @contextmanager
     def track(self, name: str):
+        """Track one workload per process; overlapping/nested contexts are rejected."""
+        if not _tracking_lock.acquire(blocking=False):
+            raise RuntimeError("CrashLens tracking is already active in this process; use separate processes for concurrent workloads")
+        try:
+            with self._track(name) as workload_id:
+                yield workload_id
+        finally:
+            _tracking_lock.release()
+
+    @contextmanager
+    def _track(self, name: str):
         """
         Context manager for tracking a workload
 
@@ -133,7 +148,7 @@ class WorkloadTracker:
         sampler = None
         if METRICS_AVAILABLE:
             try:
-                sampler = GPUMetricsSampler()
+                sampler = GPUMetricsSampler(device=self.device) if self.device is not None else GPUMetricsSampler()
                 sampler.start()
             except Exception:
                 sampler = None
@@ -264,10 +279,10 @@ class WorkloadTracker:
 _global_tracker: Optional[WorkloadTracker] = None
 
 
-def init(api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None):
+def init(api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None):
     """Initialize global tracker"""
     global _global_tracker
-    _global_tracker = WorkloadTracker(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model)
+    _global_tracker = WorkloadTracker(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model, device=device)
     return _global_tracker
 
 

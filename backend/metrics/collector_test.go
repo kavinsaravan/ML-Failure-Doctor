@@ -40,3 +40,30 @@ func TestNVIDIACollectorCommand(t *testing.T) {
 		t.Fatal(m)
 	}
 }
+
+func TestSimulationScenariosAndIndependentProgression(t *testing.T) {
+	oom := NewSimulatedCollector("gpu_oom")
+	other := NewSimulatedCollector("gpu_oom")
+	for _, percent := range []float64{20, 45, 70, 85, 91, 95, 98, 99, 99} {
+		sample, err := oom.Collect()
+		if err != nil || sample.Source != "Simulated" || sample.GPUMemoryPercent != percent || sample.GPUMemoryUsedMB != percent/100*sample.GPUMemoryTotalMB {
+			t.Fatalf("unexpected demo progression: %+v %v", sample, err)
+		}
+	}
+	first, _ := other.Collect()
+	if first.GPUMemoryPercent != 20 {
+		t.Fatal("jobs shared simulation state")
+	}
+	for _, scenario := range []string{"timeout", "successful", "default"} {
+		collector := NewSimulatedCollector(scenario)
+		for i := 0; i < 15; i++ {
+			sample, _ := collector.Collect()
+			if sample.Source != "Simulated" || sample.GPUMemoryPercent < 0 || sample.GPUMemoryPercent > 100 || sample.GPUUtilizationPercent < 0 || sample.GPUUtilizationPercent > 100 {
+				t.Fatalf("invalid demo sample: %+v", sample)
+			}
+			if scenario == "timeout" && (sample.GPUMemoryPercent != 45 || sample.GPUUtilizationPercent >= 8) {
+				t.Fatal("timeout should simulate stalled utilization")
+			}
+		}
+	}
+}
