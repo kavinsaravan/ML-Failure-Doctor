@@ -1,76 +1,136 @@
 package middleware
 
 import (
+	"context"
+	"fmt"
+	"golang.org/x/time/rate"
+	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/time/rate"
 )
 
-// IPRateLimiter tracks rate limiters per IP address
+type ipEntry struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
 type IPRateLimiter struct {
-	limiters map[string]*rate.Limiter
-	mu       sync.RWMutex
+	limiters map[string]*ipEntry
+	mu       sync.Mutex
 	rate     rate.Limit
 	burst    int
+	trusted  []netip.Prefix
 }
 
-// NewIPRateLimiter creates a new IP-based rate limiter
 func NewIPRateLimiter(requestsPerMinute int) *IPRateLimiter {
-	return &IPRateLimiter{
-		limiters: make(map[string]*rate.Limiter),
-		rate:     rate.Limit(float64(requestsPerMinute) / 60.0), // Convert to per-second
-		burst:    requestsPerMinute / 6,                          // Allow short bursts
+	if requestsPerMinute < 1 {
+		requestsPerMinute = 1
 	}
+	burst := requestsPerMinute / 6
+	if burst < 1 {
+		burst = 1
+	}
+	return &IPRateLimiter{limiters: make(map[string]*ipEntry), rate: rate.Limit(float64(requestsPerMinute) / 60), burst: burst}
 }
 
-// getLimiter returns the rate limiter for a given IP
-func (rl *IPRateLimiter) getLimiter(ip string) *rate.Limiter {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	limiter, exists := rl.limiters[ip]
-	if !exists {
-		limiter = rate.NewLimiter(rl.rate, rl.burst)
-		rl.limiters[ip] = limiter
+// Configure before serving. Forwarded headers are ignored unless the direct peer is trusted.
+func (rl *IPRateLimiter) SetTrustedProxies(cidrs []string) error {
+	var trusted []netip.Prefix
+	for _, cidr := range cidrs {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			return fmt.Errorf("invalid trusted proxy %q", cidr)
+		}
+		trusted = append(trusted, prefix)
 	}
-
-	return limiter
+	rl.trusted = trusted
+	return nil
 }
-
-// Middleware wraps an HTTP handler with rate limiting
+func (rl *IPRateLimiter) isTrusted(ip netip.Addr) bool {
+	for _, prefix := range rl.trusted {
+		if prefix.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+func (rl *IPRateLimiter) clientIP(r *http.Request) string {
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil {
+		return host
+	}
+	peer = peer.Unmap()
+	if !rl.isTrusted(peer) {
+		return peer.String()
+	}
+	hops := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	candidate := peer
+	for i := len(hops) - 1; i >= 0; i-- {
+		if !rl.isTrusted(candidate) {
+			break
+		}
+		ip, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil {
+			return peer.String()
+		}
+		candidate = ip.Unmap()
+	}
+	return candidate.String()
+}
 func (rl *IPRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract IP from request
-		ip := r.RemoteAddr
-
-		// Use last entry in X-Forwarded-For (added by Railway proxy, can't be spoofed)
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
-			ip = strings.TrimSpace(parts[len(parts)-1])
+		ip := rl.clientIP(r)
+		now := time.Now()
+		rl.mu.Lock()
+		entry, exists := rl.limiters[ip]
+		if !exists {
+			// Bound tracking memory without evicting active clients and resetting their limits.
+			if len(rl.limiters) >= 10000 {
+				rl.mu.Unlock()
+				http.Error(w, "Rate limiter capacity reached", http.StatusTooManyRequests)
+				return
+			}
+			entry = &ipEntry{limiter: rate.NewLimiter(rl.rate, rl.burst)}
+			rl.limiters[ip] = entry
 		}
-
-		limiter := rl.getLimiter(ip)
-		if !limiter.Allow() {
+		entry.lastSeen = now
+		allowed := entry.limiter.Allow()
+		rl.mu.Unlock()
+		if !allowed {
+			w.Header().Set("Retry-After", "6")
 			http.Error(w, "Rate limit exceeded. Try again later.", http.StatusTooManyRequests)
 			return
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }
-
-// Cleanup removes old limiters (run periodically in background)
-func (rl *IPRateLimiter) Cleanup() {
-	ticker := time.NewTicker(1 * time.Hour)
+func (rl *IPRateLimiter) Cleanup(ctx context.Context) {
 	go func() {
-		for range ticker.C {
-			rl.mu.Lock()
-			// Reset the map to clear old entries
-			rl.limiters = make(map[string]*rate.Limiter)
-			rl.mu.Unlock()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				rl.mu.Lock()
+				for ip, entry := range rl.limiters {
+					if now.Sub(entry.lastSeen) > 15*time.Minute {
+						delete(rl.limiters, ip)
+					}
+				}
+				rl.mu.Unlock()
+			}
 		}
 	}()
 }

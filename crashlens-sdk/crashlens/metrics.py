@@ -11,7 +11,7 @@ Collects GPU memory and utilization during training with:
 import time
 import json
 from typing import List, Dict, Optional
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from collections import deque
 from datetime import datetime, timezone
 
@@ -34,6 +34,7 @@ class GPUMetricsSampler:
         self.interval = interval
         self.max_samples = max_samples
         self.samples = deque(maxlen=max_samples)
+        self.samples_lock = Lock()
         self.thread: Optional[Thread] = None
         self.stop_event = Event()
 
@@ -91,16 +92,23 @@ class GPUMetricsSampler:
         # Take final snapshot to capture peak memory
         final_sample = self._collect_sample()
         if final_sample:
-            self.samples.append(final_sample)
+            with self.samples_lock:
+                self.samples.append(final_sample)
 
-        return list(self.samples)
+        return self.snapshot()
+
+    def snapshot(self) -> List[Dict]:
+        """Thread-safe copy for live uploads."""
+        with self.samples_lock:
+            return list(self.samples)
 
     def _sample_loop(self):
         """Background thread that periodically collects metrics"""
         while not self.stop_event.is_set():
             sample = self._collect_sample()
             if sample:
-                self.samples.append(sample)
+                with self.samples_lock:
+                    self.samples.append(sample)
 
             # Sleep with early exit if stop is signaled
             self.stop_event.wait(self.interval)

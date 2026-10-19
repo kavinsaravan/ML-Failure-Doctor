@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,6 +15,7 @@ import (
 
 	"crashlens/classifier"
 	"crashlens/db"
+	"crashlens/metrics"
 )
 
 type JobResult struct {
@@ -27,6 +27,7 @@ type JobResult struct {
 }
 
 type MetricsSnapshot struct {
+	Source           string    `json:"source"`
 	Timestamp        time.Time `json:"timestamp"`
 	GPUMemoryUsed    float64   `json:"gpu_memory_used_mb"`
 	GPUMemoryTotal   float64   `json:"gpu_memory_total_mb"`
@@ -37,6 +38,12 @@ type MetricsSnapshot struct {
 
 // RunPythonJob executes a Python script with streaming logs and metrics collection
 func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	return RunPythonJobContext(ctx, scriptPath, workloadID, database)
+}
+
+func RunPythonJobContext(ctx context.Context, scriptPath string, workloadID int, database *db.DB) (*JobResult, error) {
 	startTime := time.Now()
 
 	// Update workload status to running
@@ -48,34 +55,42 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	now := time.Now()
 	workload.StartedAt = &now
 	workload.Status = "running"
-	database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload)
-
-	// Prepare command
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "python3", scriptPath)
-
-	// Create pipes for streaming stdout/stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
+	if err := database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload); err != nil {
 		return nil, err
 	}
 
-	// Buffer to collect all logs (with mutex for thread safety)
+	failStart := func(cause error) (*JobResult, error) {
+		finished := time.Now()
+		runtime := finished.Sub(startTime).Seconds()
+		code := 1
+		logs := "Job launch failed: " + cause.Error()
+		failure := classifier.UnknownError
+		workload.Status = "failed"
+		workload.FinishedAt = &finished
+		workload.RuntimeSeconds = &runtime
+		workload.ExitCode = &code
+		workload.JobLogs = &logs
+		workload.FailureType = &failure
+		if err := database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload); err != nil {
+			return nil, fmt.Errorf("%v; save failure: %w", cause, err)
+		}
+		return nil, cause
+	}
+	// Unbuffered Python output makes progress available before process exit.
+	cmd := exec.CommandContext(ctx, "python3", "-u", scriptPath)
+	configureCancellation(cmd)
 	var logBuffer bytes.Buffer
 	var logMutex sync.Mutex
-
-	// Start the command
+	output := &lockedLogWriter{buffer: &logBuffer, mutex: &logMutex}
+	cmd.Stdout = output
+	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return failStart(err)
 	}
 
 	// Start metrics collection in background
 	metricsCtx, cancelMetrics := context.WithCancel(ctx)
-	var allMetrics []MetricsSnapshot
+	allMetrics := []MetricsSnapshot{}
 	var metricsMutex sync.Mutex
 	metricsDone := make(chan struct{})
 	go func() {
@@ -83,32 +98,44 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 		collectMetricsToSlice(metricsCtx, scriptPath, &allMetrics, &metricsMutex)
 	}()
 
-	// WaitGroup to ensure all output is read before cmd.Wait()
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// Stream stdout
+	// Persist current logs and samples while the process is running.
+	liveCtx, stopLive := context.WithCancel(context.Background())
+	liveDone := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		streamOutput(stdout, &logBuffer, &logMutex, "STDOUT")
+		defer close(liveDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-liveCtx.Done():
+				return
+			case <-ticker.C:
+				logMutex.Lock()
+				logs := logBuffer.String()
+				logMutex.Unlock()
+				metricsMutex.Lock()
+				samples := append([]MetricsSnapshot{}, allMetrics...)
+				metricsMutex.Unlock()
+				encoded, _ := json.Marshal(samples)
+				if err := database.UpdateTelemetry(workloadID, logs, string(encoded), time.Since(startTime).Seconds()); err != nil {
+					log.Printf("Live telemetry for job %d: %v", workloadID, err)
+				}
+			}
+		}
 	}()
-
-	// Stream stderr
-	go func() {
-		defer wg.Done()
-		streamOutput(stderr, &logBuffer, &logMutex, "STDERR")
-	}()
-
-	// Wait for all output to be read first
-	wg.Wait()
-
-	// Now it's safe to wait for the command
 	err = cmd.Wait()
 	runtime := time.Since(startTime).Seconds()
-
-	// Stop metrics collection and wait for collector to fully exit
 	cancelMetrics()
-	<-metricsDone // Collector has fully exited; safe to read allMetrics without lock
+	stopLive()
+	<-metricsDone
+	<-liveDone
+	if ctx.Err() != nil {
+		text := "Job canceled: " + ctx.Err().Error()
+		if ctx.Err() == context.DeadlineExceeded {
+			text = "Job execution timeout: " + ctx.Err().Error()
+		}
+		output.Write([]byte("\n" + text + "\n"))
+	}
 
 	// Format metrics as JSON
 	metricsJSON, _ := json.MarshalIndent(allMetrics, "", "  ")
@@ -123,7 +150,7 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	}
 
 	// Get exit code
-	if err != nil {
+	if err != nil || ctx.Err() != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			result.ExitCode = exitErr.ExitCode()
 		} else {
@@ -149,6 +176,9 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	if result.ExitCode != 0 {
 		workload.Status = "failed"
 		failureType := classifier.ClassifyFailure(logs, result.GPUMetrics)
+		if ctx.Err() == context.DeadlineExceeded {
+			failureType = classifier.Timeout
+		}
 		workload.FailureType = &failureType
 
 		// Calculate wasted GPU seconds (assuming 1 GPU for now)
@@ -158,7 +188,9 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 		workload.Status = "succeeded"
 	}
 
-	database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload)
+	if err := database.UpdateWorkload(fmt.Sprintf("%d", workloadID), workload); err != nil {
+		return nil, err
+	}
 
 	log.Printf("Job %d completed: status=%s, exit_code=%d, runtime=%.2fs",
 		workloadID, workload.Status, result.ExitCode, runtime)
@@ -166,16 +198,40 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 	return result, nil
 }
 
+// Keep a bounded tail of logs while allowing concurrent stdout/stderr writes.
+type lockedLogWriter struct {
+	buffer *bytes.Buffer
+	mutex  *sync.Mutex
+}
+
+func (w *lockedLogWriter) Write(chunk []byte) (int, error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.buffer.Write(chunk)
+	if w.buffer.Len() > 256*1024 {
+		tail := append([]byte{}, w.buffer.Bytes()[w.buffer.Len()-256*1024:]...)
+		w.buffer.Reset()
+		w.buffer.Write(tail)
+	}
+	return len(chunk), nil
+}
+
 // streamOutput reads from a pipe and writes to buffer with optional logging
 func streamOutput(reader io.Reader, buffer *bytes.Buffer, mutex *sync.Mutex, prefix string) {
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		line := scanner.Text()
-		mutex.Lock()
-		buffer.WriteString(line + "\n")
-		mutex.Unlock()
-		// Optionally log to console for debugging
-		// log.Printf("[%s] %s", prefix, line)
+	chunk := make([]byte, 32*1024)
+	for {
+		n, err := reader.Read(chunk)
+		if n > 0 {
+			mutex.Lock()
+			buffer.Write(chunk[:n])
+			mutex.Unlock()
+		}
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("%s log read failed: %v", prefix, err)
+			}
+			return
+		}
 	}
 }
 
@@ -187,6 +243,13 @@ func collectMetricsToSlice(ctx context.Context, scriptPath string, metrics *[]Me
 	// Determine job type from script path for simulation
 	jobType := getJobType(scriptPath)
 	iteration := 0
+	if ctx.Err() == nil {
+		snapshot := collectGPUMetricsSnapshot(jobType, iteration)
+		mutex.Lock()
+		*metrics = append(*metrics, snapshot)
+		mutex.Unlock()
+		iteration++
+	}
 
 	for {
 		select {
@@ -196,6 +259,9 @@ func collectMetricsToSlice(ctx context.Context, scriptPath string, metrics *[]Me
 			snapshot := collectGPUMetricsSnapshot(jobType, iteration)
 			mutex.Lock()
 			*metrics = append(*metrics, snapshot)
+			if len(*metrics) > 300 {
+				*metrics = append([]MetricsSnapshot{}, (*metrics)[len(*metrics)-300:]...)
+			}
 			mutex.Unlock()
 			iteration++
 		}
@@ -214,62 +280,28 @@ func getJobType(scriptPath string) string {
 	return "default"
 }
 
-// collectGPUMetricsSnapshot collects a single snapshot of GPU metrics
+// Use the same NVIDIA/ROCm collector implementations as platform detection.
 func collectGPUMetricsSnapshot(jobType string, iteration int) MetricsSnapshot {
-	// Try to collect real AMD GPU metrics first
-	if realMetrics := collectRealROCmMetrics(); realMetrics != nil {
-		return *realMetrics
-	}
-
-	// Fallback to simulated metrics
-	return simulateGPUMetrics(jobType, iteration)
+	return snapshotFromCollector(metrics.GetCollector(""), jobType, iteration)
 }
 
-// collectRealROCmMetrics attempts to collect real AMD GPU metrics using rocm-smi
-func collectRealROCmMetrics() *MetricsSnapshot {
-	// Try rocm-smi --showmemuse --showuse
-	cmd := exec.Command("rocm-smi", "--showmemuse", "--showuse", "--showtemp")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil
-	}
-
-	// Parse rocm-smi output
-	lines := strings.Split(string(output), "\n")
-	snapshot := &MetricsSnapshot{
-		Timestamp: time.Now(),
-	}
-
-	// Simple parsing - looking for patterns like:
-	// GPU[0] : Memory Usage: 12345 / 24576 MB
-	// GPU[0] : GPU use: 85%
-	for _, line := range lines {
-		if strings.Contains(line, "Memory Usage") {
-			// Extract memory values
-			fmt.Sscanf(line, "GPU[0] : Memory Usage: %f / %f MB",
-				&snapshot.GPUMemoryUsed, &snapshot.GPUMemoryTotal)
-			if snapshot.GPUMemoryTotal > 0 {
-				snapshot.GPUMemoryPercent = (snapshot.GPUMemoryUsed / snapshot.GPUMemoryTotal) * 100
-			}
-		} else if strings.Contains(line, "GPU use") {
-			fmt.Sscanf(line, "GPU[0] : GPU use: %f%%", &snapshot.GPUUtilization)
-		} else if strings.Contains(line, "Temperature") {
-			fmt.Sscanf(line, "GPU[0] : Temperature: %f C", &snapshot.Temperature)
+func snapshotFromCollector(collector metrics.MetricCollector, jobType string, iteration int) MetricsSnapshot {
+	if collector.Name() != "Simulated" {
+		sample, err := collector.Collect()
+		if err == nil {
+			return MetricsSnapshot{Timestamp: sample.Timestamp, GPUMemoryUsed: sample.GPUMemoryUsedMB,
+				GPUMemoryTotal: sample.GPUMemoryTotalMB, GPUMemoryPercent: sample.GPUMemoryPercent,
+				GPUUtilization: sample.GPUUtilizationPercent, Temperature: float64(sample.TemperatureCelsius), Source: collector.Name()}
 		}
 	}
-
-	// If we got valid data, return it
-	if snapshot.GPUMemoryTotal > 0 {
-		return snapshot
-	}
-
-	return nil
+	return simulateGPUMetrics(jobType, iteration)
 }
 
 // simulateGPUMetrics generates realistic GPU metrics for demo purposes
 func simulateGPUMetrics(jobType string, iteration int) MetricsSnapshot {
 	snapshot := MetricsSnapshot{
 		Timestamp:      time.Now(),
+		Source:         "Simulated",
 		GPUMemoryTotal: 24576, // 24GB AMD GPU
 		Temperature:    65.0 + float64(iteration)*2.0,
 	}

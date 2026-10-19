@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![NVIDIA CUDA](https://img.shields.io/badge/NVIDIA-CUDA-76B900.svg)
 ![AMD ROCm](https://img.shields.io/badge/AMD-ROCm-red.svg)
-![Go](https://img.shields.io/badge/Go-1.22-00ADD8.svg)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)
 
@@ -20,7 +20,7 @@
 -  **Universal GPU Support** - Works with NVIDIA (nvidia-smi), AMD (rocm-smi), and cloud platforms
 -  **Real-time Metrics** - Live GPU memory, utilization, and temperature monitoring
 -  **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
--  **Production-Ready** - Fully containerized with Docker
+-  **Containerized Prototype** - Docker setup for reproducible demos
 
 ---
 
@@ -35,7 +35,7 @@
   - Prevention strategies
 - **Universal GPU Support**: Auto-detects NVIDIA (nvidia-smi) or AMD (rocm-smi) GPUs
 - **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring
-  - *Note: Demo jobs use simulated metrics. Workloads tracked with the SDK record live GPU memory (NVIDIA and ROCm), plus utilization and temperature on NVIDIA when `nvidia-ml-py` is installed.*
+  - *Note: Demo jobs use real NVIDIA/ROCm metrics when available, otherwise explicitly tagged simulated metrics. Workloads tracked with the SDK record live GPU memory (NVIDIA and ROCm), plus utilization and temperature on NVIDIA when `nvidia-ml-py` is installed.*
 - **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
 
 ###  Jupyter Notebook Integration
@@ -49,15 +49,20 @@ CrashLens provides first-class support for Jupyter notebooks:
 See [Jupyter Integration Guide](./docs/JUPYTER_INTEGRATION.md) for detailed usage.
 
 ###  Model Context Protocol (MCP) Integration
-CrashLens exposes diagnostic capabilities through standardized MCP tools:
+CrashLens provides an optional MCP server that lets Claude Desktop and other MCP clients query workload data via 7 standardized tools:
 - `get_workload_logs` - Retrieve execution logs and error traces
 - `get_gpu_metrics` - Access GPU memory, utilization, temperature data
-- `get_failure_report` - Get AI-generated diagnosis reports
+- `get_failure_report` - Get AI-generated diagnosis reports (created by the backend's Gemma 2 integration)
 - `get_checkpoint_state` - View checkpoint availability
 - `get_wasted_gpu_time` - Calculate failure cost impact
 - `list_failed_workloads` - Query failed workloads with filters
+- `get_workload_summary` - Get complete workload metadata
 
-See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifications.
+**Two separate AI integration paths:**
+1. **Backend AI Diagnosis (Gemma 2)**: When you call `POST /workloads/{id}/diagnose`, the Go backend sends logs and metrics directly to Gemma 2 via Fireworks AI (configured with `FIREWORKS_API_KEY` and `FIREWORKS_MODEL`). This produces the failure reports stored in the database.
+2. **MCP Client Queries**: External tools like Claude Desktop can use the MCP server to retrieve these reports and other workload data. The MCP server calls the CrashLens REST API; it does not invoke Gemma directly.
+
+See [MCP Server Documentation](./mcp-server/README.md) for setup and detailed tool specifications.
 
 ---
 
@@ -152,12 +157,12 @@ ML-Failure-Doctor/
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | **Frontend** | Next.js 16, React, TypeScript, Tailwind CSS | Modern, responsive dashboard |
-| **Backend** | Go 1.22, Gorilla Mux | High-performance REST API |
+| **Backend** | Go 1.26, Gorilla Mux | High-performance REST API |
 | **Database** | SQLite | Lightweight, embedded persistence |
 | **AI Model** | Gemma via Fireworks AI | Intelligent failure diagnosis |
 | **GPU Platform** | **NVIDIA CUDA / AMD ROCm** | Universal GPU metrics collection |
 | **Visualization** | Recharts | GPU metrics and performance charts |
-| **Containerization** | Docker, Docker Compose | Production-ready deployment |
+| **Containerization** | Docker, Docker Compose | Containerized deployment |
 
 ---
 
@@ -170,8 +175,8 @@ ML-Failure-Doctor/
 - **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
 
 #### Option B: Local Development
-- **Go** 1.22+ ([Download](https://go.dev/dl/))
-- **Node.js** 18+ ([Download](https://nodejs.org/))
+- **Go** 1.26+ ([Download](https://go.dev/dl/))
+- **Node.js** 20.9+ ([Download](https://nodejs.org/))
 - **Fireworks AI API Key** ([Get one free here](https://fireworks.ai))
 - **AMD ROCm** (optional, for real GPU metrics on AMD hardware)
 
@@ -187,14 +192,15 @@ git clone https://github.com/kavinsaravan/ML-Failure-Doctor.git
 cd ML-Failure-Doctor
 
 # 2. Create environment file with your Fireworks AI API key
-echo "FIREWORKS_API_KEY=your_api_key_here" > .env
+cp .env.example .env
+# Optional: set FIREWORKS_API_KEY and FIREWORKS_MODEL in .env for AI diagnosis
 
 # 3. Start all services (backend, frontend, database)
-docker-compose up -d
+docker compose up --build -d
 
 # 4. Wait for services to start (about 30 seconds)
 # Check logs to verify everything is running:
-docker-compose logs -f
+docker compose logs -f
 
 # 5. Access the application
 open http://localhost:3000
@@ -206,14 +212,25 @@ open http://localhost:3000
 -  **Health Check**: http://localhost:8080/health
 -  **Database**: SQLite (auto-created in Docker volume)
 
+Demo scripts are packaged in the backend image. SQLite is stored in the named
+`crashlens-data` volume, which survives container recreation and `docker compose down`.
+`docker compose down -v` deletes the stored workloads.
+
+`NEXT_PUBLIC_API_URL` must be reachable from the browser. For a remote host, set it
+to that host's backend URL in `.env` and rebuild with `docker compose up --build -d`.
+The default is `http://localhost:8080`.
+
+The optional MCP service uses stdio and is launched by an MCP client, rather than
+started with the dashboard. See [Docker MCP setup](./mcp-server/README.md#docker).
+
 **To Stop:**
 ```bash
-docker-compose down
+docker compose down
 ```
 
 **To Restart:**
 ```bash
-docker-compose restart
+docker compose restart
 ```
 
 ---
@@ -265,18 +282,37 @@ npm run dev
 
 **Step 3: (Optional) MCP Server Setup**
 
-For advanced Model Context Protocol features, open a **third terminal**:
+To enable Claude Desktop or other MCP clients to query your CrashLens deployment:
 
 ```bash
-# Navigate to MCP server directory (from project root)
-cd mcp-server
-
-# Install dependencies
-npm install
-
-# Start the MCP server
-npm start
+cd mcp-server && npm install
 ```
+
+Then add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "crashlens": {
+      "command": "node",
+      "args": ["/absolute/path/to/ML-Failure-Doctor/mcp-server/server.js"],
+      "env": {
+        "CRASHLENS_URL": "http://localhost:8080",
+        "CRASHLENS_API_KEY": "your-api-key-if-required"
+      }
+    }
+  }
+}
+```
+
+**Test the setup** with MCP Inspector before configuring Claude Desktop:
+
+```bash
+CRASHLENS_URL=https://your-backend.up.railway.app npx @modelcontextprotocol/inspector node server.js
+```
+
+See [MCP Server Documentation](./mcp-server/README.md) for more details.
+
 ---
 
 ## 🔌 API Reference

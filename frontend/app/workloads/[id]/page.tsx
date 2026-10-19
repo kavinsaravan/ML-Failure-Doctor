@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, Workload, DiagnosisReport } from '@/lib/api';
@@ -12,7 +12,6 @@ import {
   Terminal,
   Activity,
   Zap,
-  TrendingUp,
   Database,
   Cpu,
   Loader2,
@@ -24,8 +23,9 @@ interface MetricsSnapshot {
   gpu_memory_used_mb: number;
   gpu_memory_total_mb: number;
   gpu_memory_percent: number;
-  gpu_utilization_percent: number;
-  temperature_celsius: number;
+  gpu_utilization_percent: number | null;
+  temperature_celsius: number | null;
+  source?: string;
 }
 
 export default function WorkloadDetail() {
@@ -36,16 +36,13 @@ export default function WorkloadDetail() {
   const [loading, setLoading] = useState(true);
   const [diagnosing, setDiagnosing] = useState(false);
 
-  useEffect(() => {
-    if (params.id) {
-      loadWorkload();
-    }
-  }, [params.id]);
-
-  const loadWorkload = async () => {
+  const loadWorkload = useCallback(async () => {
     try {
       const data = await api.getWorkload(params.id as string);
       setWorkload(data);
+
+      setDiagnosis(null);
+      setMetrics([]);
 
       // Parse existing diagnosis if available
       if (data.failure_report) {
@@ -71,46 +68,32 @@ export default function WorkloadDetail() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    if (!params.id) return;
+    const initial = setTimeout(() => void loadWorkload(), 0);
+    const interval = setInterval(loadWorkload, 3000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [params.id, loadWorkload]);
 
   const handleDiagnose = async () => {
-    console.log('handleDiagnose called');
     setDiagnosing(true);
     try {
-      console.log('Calling diagnoseWorkload API for ID:', params.id);
-
-      // Add artificial delay to show loading state (minimum 2 seconds)
-      const [report] = await Promise.all([
-        api.diagnoseWorkload(params.id as string),
-        new Promise(resolve => setTimeout(resolve, 2000))
-      ]);
-
-      console.log('Received diagnosis report:', report);
+      const report = await api.diagnoseWorkload(params.id as string, true);
       setDiagnosis(report);
-      await loadWorkload();
-      console.log('Workload reloaded');
-
-      // Reload the page to show fresh data
-      window.location.reload();
     } catch (error) {
-      console.error('Failed to diagnose:', error);
       alert('Failed to run diagnosis: ' + (error as Error).message);
+    } finally {
       setDiagnosing(false);
     }
   };
 
   const formatDuration = (seconds?: number) => {
-    if (!seconds) return 'N/A';
+    if (seconds == null) return 'N/A';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}m ${secs}s`;
-  };
-
-  const formatFailureType = (type: string) => {
-    return type
-      .split('_')
-      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-      .join(' ');
   };
 
   const getChartData = () => {
@@ -234,7 +217,7 @@ export default function WorkloadDetail() {
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Diagnosing...
                   </>
-                ) : diagnosis ? 'Re-run Diagnosis' : 'Run AI Diagnosis'}
+                ) : diagnosis ? 'Re-run Diagnosis' : 'Run Diagnosis'}
               </button>
             )}
           </div>
@@ -277,7 +260,7 @@ export default function WorkloadDetail() {
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
               <Zap className="w-5 h-5 text-yellow-400" />
-              <span className="text-sm text-slate-400">GPU Seconds Wasted</span>
+              <span className="text-sm text-slate-400">Estimated GPU Seconds Wasted</span>
             </div>
             <div className="text-xl font-bold text-white">
               {workload.wasted_gpu_seconds ? Math.floor(workload.wasted_gpu_seconds) : 0}s
@@ -290,51 +273,14 @@ export default function WorkloadDetail() {
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-blue-500/30 rounded-lg p-8 mb-8 shadow-2xl">
             <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
               <Activity className="w-8 h-8 text-blue-400" />
-              AI Diagnosis Report
+              {diagnosis.source === 'ai' ? 'AI-assisted Diagnosis Report' : 'Rule-based Diagnosis Report'}
             </h2>
 
-            {/* AI Doctor Architecture Panel */}
-            <div className="bg-slate-900/50 border border-blue-500/30 rounded-lg p-6 mb-6">
-              <div className="text-sm font-semibold text-blue-400 mb-3 uppercase tracking-wide">
-                AI Doctor Architecture
-              </div>
-              <div className="grid md:grid-cols-3 gap-4 mb-4">
-                <div className="text-center">
-                  <div className="text-xs text-slate-400 mb-1">Diagnosis Model</div>
-                  <div className="text-sm font-medium text-white">Gemma via Fireworks AI</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs text-slate-400 mb-1">Tool Access</div>
-                  <div className="text-sm font-medium text-white">MCP (Model Context Protocol)</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs text-slate-400 mb-1">Evidence Source</div>
-                  <div className="text-sm font-medium text-white">Logs + GPU Metrics + Traces</div>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-700 pt-4 mt-4">
-                <div className="text-xs font-semibold text-slate-400 mb-2">Execution Trace:</div>
-                <div className="space-y-2 text-xs text-slate-300">
-                  <div className="flex items-start gap-2">
-                    <span className="text-green-400 mt-0.5">✓</span>
-                    <span>Retrieved workload logs through MCP tool</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-green-400 mt-0.5">✓</span>
-                    <span>Retrieved GPU metrics through MCP tool</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-green-400 mt-0.5">✓</span>
-                    <span>Retrieved failure report through MCP tool</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-blue-400 mt-0.5">🤖</span>
-                    <span>Generated Gemma diagnosis through Fireworks AI</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <p className="text-slate-300 mb-6">
+              {diagnosis.source === 'ai'
+                ? 'Generated through Fireworks AI using workload logs and GPU metrics.'
+                : 'Generated from log-matching rules. AI-assisted diagnosis was unavailable.'}
+            </p>
 
             {/* Failure Type & Confidence - Prominent Display */}
             <div className="bg-slate-900 rounded-lg p-6 mb-6 border border-slate-700">
@@ -346,9 +292,10 @@ export default function WorkloadDetail() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-slate-400 mb-2">Confidence</div>
+                  <div className="text-sm font-medium text-slate-400 mb-2">Heuristic log-match score</div>
                   <div className="text-2xl font-bold text-green-400">
                     {(diagnosis.confidence * 100).toFixed(0)}%
+                    <p className="text-sm font-normal text-slate-400 mt-2">This score is not a measured probability of correctness.</p>
                   </div>
                 </div>
               </div>
@@ -416,10 +363,10 @@ export default function WorkloadDetail() {
                     <CheckCircle className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
                     <div>
                       <div className="text-green-400 font-semibold mb-1">
-                        Yes, safe to retry after applying fixes
+                        Yes, safe to retry without changes
                       </div>
                       <div className="text-slate-400 text-sm">
-                        This issue can be resolved with configuration changes. Apply the recommended repairs and re-run the job.
+                        The diagnosis indicates that an unchanged retry may succeed.
                       </div>
                     </div>
                   </>
@@ -448,7 +395,7 @@ export default function WorkloadDetail() {
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Database className="w-5 h-5 text-blue-400" />
-                <h3 className="text-xl font-semibold text-white">GPU Memory Usage</h3>
+                <h3 className="text-xl font-semibold text-white">GPU Memory Usage{metrics.some(m => m.source === 'Simulated') ? ' (simulated demo data)' : ''}</h3>
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>

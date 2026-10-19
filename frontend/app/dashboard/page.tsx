@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, Workload, Stats } from '@/lib/api';
 import {
@@ -9,7 +9,6 @@ import {
   CheckCircle,
   Clock,
   TrendingUp,
-  Timer,
   PlayCircle,
   Trash2,
 } from 'lucide-react';
@@ -20,13 +19,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [runningJob, setRunningJob] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 3000); // Refresh every 3s
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [workloadsData, statsData] = await Promise.all([
         api.getWorkloads(),
@@ -39,7 +32,13 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const initial = setTimeout(() => void loadData(), 0);
+    const interval = setInterval(loadData, 3000); // Refresh every 3s
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [loadData]);
 
   const handleRunJob = async (template: string) => {
     setRunningJob(template);
@@ -48,7 +47,7 @@ export default function Dashboard() {
       console.log('Job started:', result);
       setTimeout(loadData, 1000);
     } catch (error) {
-      console.error('Failed to run job:', error);
+      alert('Failed to run job: ' + (error as Error).message);
     } finally {
       setRunningJob(null);
     }
@@ -64,12 +63,12 @@ export default function Dashboard() {
       loadData();
     } catch (error) {
       console.error('Failed to clear workloads:', error);
-      alert('Failed to clear workloads. Please try again.');
+      alert('Failed to clear workloads. Check your API access.');
     }
   };
 
   const formatDuration = (seconds?: number) => {
-    if (!seconds) return '—';
+    if (seconds == null) return '—';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}m ${secs}s`;
@@ -140,7 +139,7 @@ export default function Dashboard() {
           <p className="text-slate-400 mb-4">Monitor and diagnose GPU workloads across all platforms</p>
 
           {/* Clear All Button - only show in development */}
-          {workloads.length > 0 && process.env.NODE_ENV !== 'production' && (
+          {workloads.length > 0 && (
             <button
               onClick={handleClearAll}
               className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -199,10 +198,10 @@ export default function Dashboard() {
 
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Timer className="w-4 h-4 text-cyan-400" />
-              <span className="text-sm text-slate-400">Avg Diagnosis</span>
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span className="text-sm text-slate-400">Active Jobs</span>
             </div>
-            <div className="text-2xl font-bold text-white">&lt;1s</div>
+            <div className="text-2xl font-bold text-white">{workloads.filter(w => w.status === 'running' || w.status === 'pending').length}</div>
           </div>
         </div>
 
@@ -217,7 +216,7 @@ export default function Dashboard() {
               { template: 'dependency_error', label: 'Dependency Error', color: 'yellow' },
               { template: 'data_path_error', label: 'Data Path Error', color: 'purple' },
               { template: 'timeout', label: 'Timeout', color: 'blue' },
-            ].map(({ template, label, color }) => (
+            ].map(({ template, label }) => (
               <button
                 key={template}
                 onClick={() => handleRunJob(template)}

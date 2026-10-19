@@ -6,6 +6,9 @@ import requests
 import time
 import traceback
 import sys
+import logging
+from functools import wraps
+from threading import Thread, Event, Lock
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 
@@ -14,6 +17,22 @@ try:
     METRICS_AVAILABLE = True
 except ImportError:
     METRICS_AVAILABLE = False
+
+
+class LogBuffer:
+    """Bounded, thread-safe tail of captured output."""
+    def __init__(self, limit=256 * 1024):
+        self.limit = limit
+        self.text = ""
+        self.lock = Lock()
+
+    def append(self, text):
+        with self.lock:
+            self.text = (self.text + text).encode("utf-8")[-self.limit:].decode("utf-8", errors="ignore")
+
+    def snapshot(self):
+        with self.lock:
+            return self.text
 
 
 class WorkloadTracker:
@@ -38,7 +57,10 @@ class WorkloadTracker:
             pass
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None):
+    def __init__(self, api_url: str, api_key: Optional[str] = None, upload_interval: float = 2.0):
+        if upload_interval <= 0:
+            raise ValueError("upload_interval must be positive")
+        self.upload_interval = upload_interval
         self.api_url = api_url.rstrip('/')
         self.api_key = api_key
         self.workload_id: Optional[int] = None
@@ -55,7 +77,7 @@ class WorkloadTracker:
                 "type": workload_type,
                 "status": "running"
             },
-            headers=self.headers
+            headers=self.headers, timeout=15
         )
         response.raise_for_status()
         return response.json()["id"]
@@ -68,11 +90,12 @@ class WorkloadTracker:
         runtime_seconds: Optional[float] = None,
         exit_code: Optional[int] = None,
         failure_type: Optional[str] = None,
-        gpu_metrics: Optional[str] = None
+        gpu_metrics: Optional[str] = None,
+        timeout: float = 15
     ):
         """Update workload status"""
         data = {"status": status}
-        if logs:
+        if logs is not None:
             data["job_logs"] = logs
         if runtime_seconds is not None:
             data["runtime_seconds"] = runtime_seconds
@@ -80,15 +103,17 @@ class WorkloadTracker:
             data["exit_code"] = exit_code
         if failure_type:
             data["failure_type"] = failure_type
-        if gpu_metrics:
+        if gpu_metrics is not None:
             data["gpu_metrics"] = gpu_metrics
 
-        requests.put(
+        response = requests.put(
             f"{self.api_url}/workloads/{workload_id}",
             json=data,
-            headers=self.headers
+            headers=self.headers, timeout=timeout
         )
     
+        response.raise_for_status()
+
     @contextmanager
     def track(self, name: str):
         """
@@ -99,14 +124,18 @@ class WorkloadTracker:
                 model.train()
         """
         workload_id = self._create_workload(name)
-        start_time = time.time()
-        logs = []
+        start_time = time.monotonic()
+        logs = LogBuffer()
 
         # Start GPU metrics collection
         sampler = None
         if METRICS_AVAILABLE:
-            sampler = GPUMetricsSampler()
-            sampler.start()
+            try:
+                sampler = GPUMetricsSampler()
+                sampler.start()
+            except Exception:
+                sampler = None
+                logging.getLogger(__name__).warning("GPU sampling unavailable", exc_info=True)
 
         # Capture stdout/stderr
         class LogCapture:
@@ -115,15 +144,38 @@ class WorkloadTracker:
 
             def write(self, text):
                 logs.append(text)
-                self.original.write(text)
+                return self.original.write(text)
 
             def flush(self):
                 self.original.flush()
+
+            def __getattr__(self, name):
+                return getattr(self.original, name)
 
         old_stdout = sys.stdout
         old_stderr = sys.stderr
         sys.stdout = LogCapture(old_stdout)
         sys.stderr = LogCapture(old_stderr)
+
+        stop_live = Event()
+
+        def publish_live():
+            while not stop_live.wait(self.upload_interval):
+                try:
+                    samples = sampler.snapshot() if sampler else []
+                    self._update_workload(
+                        workload_id, status="running", logs=logs.snapshot(),
+                        runtime_seconds=time.monotonic() - start_time,
+                        gpu_metrics=GPUMetricsSampler.to_json(samples) if sampler else "",
+                        timeout=5
+                    )
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "CrashLens live upload failed for workload %s", workload_id, exc_info=True
+                    )
+
+        publisher = Thread(target=publish_live, daemon=True)
+        publisher.start()
 
         status = "succeeded"
         exit_code = 0
@@ -131,35 +183,43 @@ class WorkloadTracker:
         try:
             yield workload_id
 
-        except Exception as e:
+        except BaseException as e:
             # Failure - set status but don't update yet
-            status = "failed"
-            exit_code = 1
-            error_logs = "".join(logs) + "\n\n" + traceback.format_exc()
-            logs = [error_logs]
+            status = "succeeded" if isinstance(e, SystemExit) and e.code in (None, 0) else "failed"
+            exit_code = 0 if status == "succeeded" else 1
+            logs.append("\n\n" + traceback.format_exc())
             raise
 
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
 
+            runtime = time.monotonic() - start_time
+            # Stop uploads before the terminal status update.
+            stop_live.set()
+            publisher.join(timeout=12)
+
             # Stop GPU metrics collection
             gpu_metrics = None
             if sampler:
-                samples = sampler.stop()
-                gpu_metrics = sampler.to_json(samples)
+                try:
+                    samples = sampler.stop()
+                    gpu_metrics = sampler.to_json(samples)
+                except Exception:
+                    logging.getLogger(__name__).warning("GPU sampling cleanup failed", exc_info=True)
 
-            # Update workload with logs and metrics
-            runtime = time.time() - start_time
-            self._update_workload(
-                workload_id,
-                status=status,
-                logs="".join(logs),
-                runtime_seconds=runtime,
-                exit_code=exit_code,
-                gpu_metrics=gpu_metrics
-            )
-    
+            # Update workload with logs and metrics; cleanup latency is not training time.
+            try:
+                self._update_workload(
+                    workload_id, status=status, logs=logs.snapshot(),
+                    runtime_seconds=runtime, exit_code=exit_code, gpu_metrics=gpu_metrics
+                )
+            except Exception:
+                # Telemetry must not replace the training exception or fail completed training.
+                logging.getLogger(__name__).warning(
+                    "CrashLens could not report workload %s", workload_id, exc_info=True
+                )
+
     def track_function(self, name: str):
         """
         Decorator for tracking a function as a workload
@@ -170,6 +230,7 @@ class WorkloadTracker:
                 model.fit(X, y)
         """
         def decorator(func):
+            @wraps(func)
             def wrapper(*args, **kwargs):
                 with self.track(name):
                     return func(*args, **kwargs)
@@ -185,7 +246,7 @@ class WorkloadTracker:
         """
         response = requests.post(
             f"{self.api_url}/workloads/{workload_id}/diagnose",
-            headers=self.headers
+            headers=self.headers, timeout=75
         )
         response.raise_for_status()
         return response.json()
@@ -195,10 +256,10 @@ class WorkloadTracker:
 _global_tracker: Optional[WorkloadTracker] = None
 
 
-def init(api_url: str):
+def init(api_url: str, api_key: Optional[str] = None):
     """Initialize global tracker"""
     global _global_tracker
-    _global_tracker = WorkloadTracker(api_url)
+    _global_tracker = WorkloadTracker(api_url, api_key)
     return _global_tracker
 
 
