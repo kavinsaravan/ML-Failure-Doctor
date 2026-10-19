@@ -84,6 +84,69 @@ func (s *Server) GetWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(workload)
 }
 
+func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	// Get existing workload
+	existing, err := s.DB.GetWorkload(id)
+	if err != nil {
+		http.Error(w, "Workload not found", http.StatusNotFound)
+		return
+	}
+
+	// Decode updates
+	var updates db.Workload
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Merge updates with existing data (only update non-nil fields)
+	if updates.Status != "" {
+		existing.Status = updates.Status
+	}
+	if updates.FailureType != nil {
+		existing.FailureType = updates.FailureType
+	}
+	if updates.RuntimeSeconds != nil {
+		existing.RuntimeSeconds = updates.RuntimeSeconds
+	}
+	if updates.ExitCode != nil {
+		existing.ExitCode = updates.ExitCode
+	}
+	if updates.WastedGPUSeconds != nil {
+		existing.WastedGPUSeconds = updates.WastedGPUSeconds
+	}
+	if updates.JobLogs != nil {
+		existing.JobLogs = updates.JobLogs
+	}
+	if updates.GPUMetrics != nil {
+		existing.GPUMetrics = updates.GPUMetrics
+	}
+
+	if err := s.DB.UpdateWorkload(id, existing); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(existing)
+}
+
+func (s *Server) DeleteWorkloadHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	_, err := s.DB.Exec("DELETE FROM workloads WHERE id = ?", id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name       string `json:"name"`
