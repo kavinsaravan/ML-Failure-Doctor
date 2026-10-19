@@ -34,28 +34,38 @@ func positiveEnv(name string, fallback int) int {
 func buildRouter(server *api.Server, limiter *middleware.IPRateLimiter, mode string) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
+	signupLimiter := server.WorkspaceLimiter
+	if signupLimiter == nil {
+		signupLimiter = middleware.NewIPRateLimiter(3)
+	}
+	// A second, global limit bounds creation across changing client IPs.
+	signup := middleware.GlobalRateLimit(10, 5)(signupLimiter.Middleware(http.HandlerFunc(server.CreateWorkspaceHandler)))
+	r.Handle("/workspaces", signup).Methods("POST")
 	session := r.PathPrefix("/session").Subrouter()
-	session.Use(middleware.RequireAPIKey)
+	session.Use(middleware.Authenticate(server.DB, false))
 	session.HandleFunc("", server.SessionHandler).Methods("GET")
 	reads := r.NewRoute().Subrouter()
-	if mode != "demo" {
-		reads.Use(middleware.RequireAPIKey)
-	}
+	reads.Use(middleware.Authenticate(server.DB, mode == "demo"))
 	reads.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
 	reads.HandleFunc("/workloads/{id}", server.GetWorkloadHandler).Methods("GET")
 	reads.HandleFunc("/workloads/{id}/logs", server.GetWorkloadLogsHandler).Methods("GET")
 	reads.HandleFunc("/workloads/{id}/metrics", server.GetWorkloadMetricsHandler).Methods("GET")
 	reads.HandleFunc("/summary", server.GetSummaryHandler).Methods("GET")
 	writes := r.NewRoute().Subrouter()
-	writes.Use(middleware.RequireAPIKey)
+	writes.Use(middleware.Authenticate(server.DB, false))
 	writes.HandleFunc("/workloads", server.CreateWorkloadHandler).Methods("POST")
 	writes.HandleFunc("/workloads/clear", server.ClearAllWorkloadsHandler).Methods("DELETE")
 	writes.HandleFunc("/workloads/{id}", server.UpdateWorkloadHandler).Methods("PUT")
 	writes.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
 	expensive := r.NewRoute().Subrouter()
-	expensive.Use(middleware.RequireAPIKey, limiter.Middleware)
+	expensive.Use(middleware.Authenticate(server.DB, false), limiter.Middleware)
 	expensive.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
 	expensive.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
+	keys := r.PathPrefix("/api-keys").Subrouter()
+	keys.Use(middleware.Authenticate(server.DB, false))
+	keys.HandleFunc("", server.IssueKeyHandler).Methods("POST")
+	keys.HandleFunc("", server.ListKeysHandler).Methods("GET")
+	keys.HandleFunc("/{id}", server.RevokeKeyHandler).Methods("DELETE")
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		request.Body = http.MaxBytesReader(w, request.Body, 1024*1024)
@@ -98,11 +108,17 @@ func main() {
 		log.Fatal(err)
 	}
 	limiter.Cleanup(ctx)
+	signupLimiter := middleware.NewIPRateLimiter(3)
+	if err := signupLimiter.SetTrustedProxies(strings.Split(os.Getenv("TRUSTED_PROXY_CIDRS"), ",")); err != nil {
+		log.Fatal(err)
+	}
+	signupLimiter.Cleanup(ctx)
+	server.WorkspaceLimiter = signupLimiter
 	origins := os.Getenv("ALLOWED_ORIGINS")
 	if origins == "" {
 		origins = "http://localhost:3000,http://localhost:3001"
 	}
-	handler := cors.New(cors.Options{AllowedOrigins: strings.Split(origins, ","), AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, AllowedHeaders: []string{"Content-Type", "Authorization", "ngrok-skip-browser-warning"}}).Handler(buildRouter(server, limiter, mode))
+	handler := cors.New(cors.Options{AllowedOrigins: strings.Split(origins, ","), AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, AllowedHeaders: []string{"Content-Type", "Authorization", "ngrok-skip-browser-warning", "X-Fireworks-API-Key", "X-Fireworks-Model"}}).Handler(buildRouter(server, limiter, mode))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

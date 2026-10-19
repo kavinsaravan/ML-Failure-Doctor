@@ -19,7 +19,21 @@ __pycache__/
 *.pyc
 *.pyo
 
+# SQLite data and sidecars
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+
+# Python package build outputs
+*.egg-info/
+crashlens-sdk/build/
+crashlens-sdk/dist/
+
 # Environment variables
+.env.*
 .env
 .env.local
 .env.production

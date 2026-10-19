@@ -39,7 +39,7 @@ func NewManager(database *db.DB, concurrency, queueSize int, timeout time.Durati
 	}
 	return m
 }
-func (m *Manager) Submit(name, kind, path string) (int64, error) {
+func (m *Manager) Submit(name, kind, path string, owner ...string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.stopped {
@@ -48,7 +48,7 @@ func (m *Manager) Submit(name, kind, path string) (int64, error) {
 	if len(m.queue) == cap(m.queue) {
 		return 0, ErrQueueFull
 	}
-	id, err := m.database.CreateManagedWorkload(name, kind)
+	id, err := m.database.CreateManagedWorkload(name, kind, owner...)
 	if err != nil {
 		return 0, err
 	}

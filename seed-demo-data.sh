@@ -1,48 +1,17 @@
-#!/bin/bash
-
-API_URL="https://invigorating-empathy-production-dee5.up.railway.app"
-
-echo "Seeding demo data to CrashLens..."
-
-# Run various test jobs
-echo "1. Running GPU OOM test..."
-curl -X POST $API_URL/workloads/run \
-  -H "Content-Type: application/json" \
-  -d '{"template": "gpu_oom", "type": "ML_JOB"}' \
-  -s > /dev/null
-
-sleep 6
-
-echo "2. Running successful job..."
-curl -X POST $API_URL/workloads/run \
-  -H "Content-Type: application/json" \
-  -d '{"template": "successful", "type": "ML_JOB"}' \
-  -s > /dev/null
-
-sleep 6
-
-echo "3. Running dependency error..."
-curl -X POST $API_URL/workloads/run \
-  -H "Content-Type: application/json" \
-  -d '{"template": "dependency_error", "type": "ML_JOB"}' \
-  -s > /dev/null
-
-sleep 6
-
-echo "4. Running timeout simulation..."
-curl -X POST $API_URL/workloads/run \
-  -H "Content-Type: application/json" \
-  -d '{"template": "timeout", "type": "ML_JOB"}' \
-  -s > /dev/null
-
-sleep 6
-
-echo "5. Running missing checkpoint..."
-curl -X POST $API_URL/workloads/run \
-  -H "Content-Type: application/json" \
-  -d '{"template": "missing_checkpoint", "type": "ML_JOB"}' \
-  -s > /dev/null
-
-echo ""
-echo "Demo data seeded! Check your dashboard at:"
-echo "https://frontend-zeta-eight-92.vercel.app/dashboard"
+#!/usr/bin/env bash
+# Seed explicitly simulated jobs into the connected workspace, never a fixed host.
+set -euo pipefail
+: "${CRASHLENS_URL:?Set CRASHLENS_URL to your backend URL}"
+: "${CRASHLENS_API_KEY:?Set CRASHLENS_API_KEY to your workspace key}"
+python3 - <<'INNER'
+import json, os, urllib.request
+url = os.environ["CRASHLENS_URL"].rstrip("/")
+for template in ("gpu_oom", "successful", "dependency_error", "timeout", "missing_checkpoint", "data_path_error"):
+    request = urllib.request.Request(url + "/workloads/run", method="POST",
+        data=json.dumps({"template": template, "type": "ML_JOB"}).encode(),
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["CRASHLENS_API_KEY"]})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        result = json.load(response)
+    print(f"Queued simulated {template}: workload {result['workload_id']}")
+print("Open your dashboard to view the simulated jobs. This does not test GPU hardware.")
+INNER

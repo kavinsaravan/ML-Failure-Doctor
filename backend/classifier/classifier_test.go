@@ -6,11 +6,11 @@ import (
 
 func TestClassifyWithConfidence(t *testing.T) {
 	tests := []struct {
-		name              string
-		logs              string
-		gpuMetrics        string
-		expectedType      string
-		minConfidence     float64
+		name          string
+		logs          string
+		gpuMetrics    string
+		expectedType  string
+		minConfidence float64
 	}{
 		{
 			name:          "CUDA OOM",
@@ -183,5 +183,12 @@ func TestCalculateWastedGPUSeconds(t *testing.T) {
 				t.Errorf("Expected %.2f, got %.2f", tt.expected, result)
 			}
 		})
+	}
+}
+
+func TestMPSOutOfMemory(t *testing.T) {
+	result := ClassifyWithConfidence("RuntimeError: MPS backend out of memory (MPS allocated: 4.00 GB)", "")
+	if result.FailureType != GPUOutOfMemory {
+		t.Fatalf("unexpected classification: %+v", result)
 	}
 }

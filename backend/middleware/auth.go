@@ -1,45 +1,54 @@
 package middleware
 
 import (
+	"context"
+	"crashlens/db"
 	"crypto/subtle"
 	"net/http"
 	"os"
 	"strings"
 )
 
-// RequireAPIKey middleware checks for a valid API key on write/delete operations
-func RequireAPIKey(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get API key from environment
-		expectedKey := os.Getenv("CRASHLENS_API_KEY")
+type identityKey struct{}
+type Identity struct {
+	Owner string
+	Admin bool
+}
 
-		// If no API key is configured, allow all requests (development mode)
-		if expectedKey == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Check Authorization header
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
-			return
-		}
-
-		// Support both "Bearer <token>" and direct API key
-		var providedKey string
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			providedKey = strings.TrimPrefix(authHeader, "Bearer ")
-		} else {
-			providedKey = authHeader
-		}
-
-		// Validate API key using constant-time comparison
-		if subtle.ConstantTimeCompare([]byte(providedKey), []byte(expectedKey)) != 1 {
-			http.Error(w, "Invalid API key", http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
+func RequestIdentity(r *http.Request) Identity {
+	if identity, ok := r.Context().Value(identityKey{}).(Identity); ok {
+		return identity
+	}
+	return Identity{Owner: "legacy"}
+}
+func Authenticate(database *db.DB, publicDemo bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+			expected := os.Getenv("CRASHLENS_API_KEY")
+			identity := Identity{Owner: "legacy"}
+			if expected != "" && subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1 {
+				identity.Admin = true
+			} else if token != "" {
+				owner, err := database.ResolveAPIKey(token)
+				if err != nil {
+					http.Error(w, "Invalid API key", 401)
+					return
+				}
+				identity.Owner = owner
+			} else {
+				hasKeys, err := database.HasAPIKeys()
+				if err != nil {
+					http.Error(w, "Authentication unavailable", 503)
+					return
+				}
+				production := os.Getenv("APP_ENV") == "production" || os.Getenv("RAILWAY_ENVIRONMENT") == "production"
+				if hasKeys || ((expected != "" || production) && !publicDemo) {
+					http.Error(w, "API key required", 401)
+					return
+				}
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, identity)))
+		})
+	}
 }

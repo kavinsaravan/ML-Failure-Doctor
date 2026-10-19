@@ -26,7 +26,7 @@ def main():
     print('    raise ImportError("Torch not compiled with ROCm support")')
     print("ImportError: ROCm-compatible torch installation not found")
     print("\nPlease install ROCm-compatible PyTorch:")
-    print("  pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm5.7")
+    print("  Select a PyTorch build compatible with your installed ROCm version")
     time.sleep(0.5)
 
     print("\nAlternatively, checking for missing packages...")

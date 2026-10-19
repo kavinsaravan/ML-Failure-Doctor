@@ -44,7 +44,7 @@ Get GPU memory usage, utilization, and temperature metrics.
 **Arguments:**
 - `workload_id` (number, required): The ID of the workload
 
-**Returns:** Time-series metrics data (downsampled to 300 points if needed) with summary including peak memory, average utilization, and data point count. Metrics come from the CrashLens SDK (NVIDIA via `nvidia-ml-py`, memory via `torch.cuda` on CUDA/ROCm) or are simulated for demo jobs.
+**Returns:** Time-series metrics data (downsampled to 300 points if needed) with summary including peak memory, average utilization, and data point count. Metrics come from the CrashLens SDK (NVIDIA via `nvidia-ml-py`, memory via `torch.cuda` on CUDA/ROCm, process Metal allocations via `torch.mps` on Apple GPUs) or are simulated for demo jobs.
 
 ### 3. `get_failure_report`
 Retrieve the AI-generated failure diagnosis report.
