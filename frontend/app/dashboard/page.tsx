@@ -9,7 +9,6 @@ import {
   CheckCircle,
   Clock,
   TrendingUp,
-  PlayCircle,
   Trash2,
 } from 'lucide-react';
 
@@ -17,7 +16,6 @@ export default function Dashboard() {
   const [workloads, setWorkloads] = useState<Workload[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [runningJob, setRunningJob] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -39,19 +37,6 @@ export default function Dashboard() {
     const interval = setInterval(loadData, 3000); // Refresh every 3s
     return () => { clearTimeout(initial); clearInterval(interval); };
   }, [loadData]);
-
-  const handleRunJob = async (template: string) => {
-    setRunningJob(template);
-    try {
-      const result = await api.runWorkload(template);
-      console.log('Job started:', result);
-      setTimeout(loadData, 1000);
-    } catch (error) {
-      alert('Failed to run job: ' + (error as Error).message);
-    } finally {
-      setRunningJob(null);
-    }
-  };
 
   const handleClearAll = async () => {
     if (!confirm('Are you sure you want to delete your workloads? This cannot be undone.')) {
@@ -125,16 +110,6 @@ export default function Dashboard() {
           </Link>
           <div className="flex items-center justify-center gap-3 mb-3">
             <h1 className="text-4xl font-bold text-white">CrashLens Dashboard</h1>
-            {stats?.gpu_platform === 'NVIDIASMI' && (
-              <span className="px-3 py-1 text-white text-sm font-semibold rounded bg-green-600">
-                NVIDIA CUDA
-              </span>
-            )}
-            {stats?.gpu_platform === 'ROCmSMI' && (
-              <span className="px-3 py-1 text-white text-sm font-semibold rounded bg-red-600">
-                AMD ROCm
-              </span>
-            )}
           </div>
           <p className="text-slate-400 mb-4">Monitor your GPU workloads and investigate failures</p>
 
@@ -205,32 +180,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4">Simulated Example Jobs</h2>
-          <p className="text-slate-400 mb-4">These scripts print predefined training logs and failures on the backend. They do not train models or test your GPU. Use the SDK for real workloads.</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {[
-              { template: 'successful', label: 'Successful Job', color: 'green' },
-              { template: 'gpu_oom', label: 'GPU OOM', color: 'red' },
-              { template: 'missing_checkpoint', label: 'Missing Checkpoint', color: 'orange' },
-              { template: 'dependency_error', label: 'Dependency Error', color: 'yellow' },
-              { template: 'data_path_error', label: 'Data Path Error', color: 'purple' },
-              { template: 'timeout', label: 'Timeout', color: 'blue' },
-            ].map(({ template, label }) => (
-              <button
-                key={template}
-                onClick={() => handleRunJob(template)}
-                disabled={runningJob === template}
-                className={`px-4 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                <PlayCircle className="w-4 h-4" />
-                {runningJob === template ? 'Running...' : label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Workloads Table */}
         <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-700">
@@ -261,6 +210,13 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
+                {workloads.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
+                      No workloads yet. Track a training run with the CrashLens SDK to see it here.
+                    </td>
+                  </tr>
+                )}
                 {workloads.map((workload) => (
                   <tr key={workload.id} className="hover:bg-slate-700/30">
                     <td className="px-6 py-4 whitespace-nowrap">

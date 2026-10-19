@@ -29,7 +29,8 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_OUTPUT_STANDALONE=true
 
 # Build the application
-RUN npm run build
+# Git does not preserve an empty public directory, but the runner copies it.
+RUN mkdir -p public && npm run build
 
 # Runner stage
 FROM node:22-alpine AS runner

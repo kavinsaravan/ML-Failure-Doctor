@@ -1,0 +1,108 @@
+diff --git a/backend/cmd/evaluate/main.go b/backend/cmd/evaluate/main.go
+index 7cd771c..8cf2863 100644
+--- a/backend/cmd/evaluate/main.go
++++ b/backend/cmd/evaluate/main.go
+@@ -20,14 +20,16 @@ import (
+ )
+ 
+ type Case struct {
+-	Hardware   json.RawMessage `json:"hardware,omitempty"`
+-	ID         string          `json:"id"`
+-	Provenance string          `json:"provenance"`
+-	Expected   string          `json:"expected_failure_type"`
+-	Logs       string          `json:"logs"`
+-	Metrics    string          `json:"gpu_metrics"`
+-	Cause      string          `json:"expected_root_cause"`
+-	Fix        string          `json:"acceptable_remediation"`
++	ScenarioFamily string          `json:"scenario_family,omitempty"`
++	Trial          int             `json:"trial,omitempty"`
++	Hardware       json.RawMessage `json:"hardware,omitempty"`
++	ID             string          `json:"id"`
++	Provenance     string          `json:"provenance"`
++	Expected       string          `json:"expected_failure_type"`
++	Logs           string          `json:"logs"`
++	Metrics        string          `json:"gpu_metrics"`
++	Cause          string          `json:"expected_root_cause"`
++	Fix            string          `json:"acceptable_remediation"`
+ }
+ type Dataset struct {
+ 	Schema      int    `json:"schema_version"`
+@@ -36,8 +38,9 @@ type Dataset struct {
+ }
+ type Prediction struct {
+ 	Case
+-	Correct bool             `json:"classification_correct"`
+-	Report  diagnosis.Report `json:"report"`
++	DurationMS int64            `json:"diagnosis_duration_ms"`
++	Correct    bool             `json:"classification_correct"`
++	Report     diagnosis.Report `json:"report"`
+ }
+ type Score struct {
+ 	Total    int     `json:"total"`
+@@ -96,14 +99,24 @@ func run() error {
+ 	if err = os.MkdirAll(*output, 0755); err != nil {
+ 		return err
+ 	}
++	entries, err := os.ReadDir(*output)
++	if err != nil {
++		return err
++	}
++	if len(entries) > 0 {
++		return fmt.Errorf("output directory is not empty; choose a new directory to preserve existing results and reviews")
++	}
+ 	predictions := []Prediction{}
+ 	correct, ai := 0, 0
+ 	confusion := map[string]map[string]int{}
+ 	provenance := map[string]Score{}
++	families := map[string]Score{}
+ 	for _, c := range data.Cases {
+ 		// Ground-truth labels and rubric never enter the diagnosis input.
+ 		w := &db.Workload{Name: "Evaluation workload", Type: "ML_JOB", Status: "failed", JobLogs: &c.Logs, GPUMetrics: &c.Metrics}
++		started := time.Now()
+ 		report := diagnosis.RunDiagnosis(w, client)
++		duration := time.Since(started).Milliseconds()
+ 		match := report.FailureType == c.Expected
+ 		if match {
+ 			correct++
+@@ -111,7 +124,7 @@ func run() error {
+ 		if report.Source == "ai" {
+ 			ai++
+ 		}
+-		predictions = append(predictions, Prediction{Case: c, Correct: match, Report: report})
++		predictions = append(predictions, Prediction{Case: c, DurationMS: duration, Correct: match, Report: report})
+ 		if confusion[c.Expected] == nil {
+ 			confusion[c.Expected] = map[string]int{}
+ 		}
+@@ -122,6 +135,14 @@ func run() error {
+ 			s.Correct++
+ 		}
+ 		provenance[c.Provenance] = s
++		if c.ScenarioFamily != "" {
++			f := families[c.ScenarioFamily]
++			f.Total++
++			if match {
++				f.Correct++
++			}
++			families[c.ScenarioFamily] = f
++		}
+ 		// Checkpoint each result so paid runs interrupted later retain their responses.
+ 		bytes, _ := json.MarshalIndent(predictions, "", "  ")
+ 		if err = os.WriteFile(filepath.Join(*output, "predictions.json"), append(bytes, '\n'), 0644); err != nil {
+@@ -149,6 +170,9 @@ func run() error {
+ 	for label, s := range provenance {
+ 		provenance[label] = score(s.Total, s.Correct)
+ 	}
++	for family, s := range families {
++		families[family] = score(s.Total, s.Correct)
++	}
+ 	revision := "unknown"
+ 	if out, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
+ 		revision = strings.TrimSpace(string(out))
+@@ -163,6 +187,7 @@ func run() error {
+ 		"dataset_description": data.Description, "generated_at": time.Now().UTC(),
+ 		"classification": score(len(predictions), correct), "macro_f1_percent": macroF1,
+ 		"wilson_95_percent_interval": wilson(len(predictions), correct), "confusion_matrix": confusion, "by_provenance": provenance,
++		"by_scenario_family": families, "scenario_family_count": len(families),
+ 		"ai_reports": ai, "rules_reports": len(predictions) - ai,
+ 		"classification_origin":  "Production heuristic classifier in both modes; Fireworks does not independently choose the category.",
+ 		"root_cause_correctness": "pending human review", "remediation_correctness": "pending human review",

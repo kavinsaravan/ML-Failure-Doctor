@@ -1,0 +1,18 @@
+{
+  "torch_version": "2.12.0",
+  "device": "cpu",
+  "purpose": "Validate the risk of the returned .data in-place repair; this is a gradient-correctness counterexample, not another GPU job.",
+  "expected_gradient_without_mutation": [
+    0.1966119259595871,
+    0.10499362647533417,
+    0.04517665505409241
+  ],
+  "gradient_after_data_mutation": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "incorrect_gradient_silently_produced": true,
+  "detach_mutation_guard_detected": true,
+  "primary_reference": "https://pytorch.org/blog/pytorch-0_4_0-migration-guide/"
+}

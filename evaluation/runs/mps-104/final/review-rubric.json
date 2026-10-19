@@ -1,0 +1,14 @@
+{
+  "reviewer": "Codex (project assistant; model-based review, not independent human review)",
+  "predictions_sha256": "c6d15a3f925e5f19297d81ba880f107adec9c1da766cba6d7f22ceb0c565939a",
+  "review_scope": "Read every root_cause and recommended_fix against recorded injected failures, logs, and metrics. Evidence/prevention are ancillary and not separately certified.",
+  "root_cause_rule": "1 only when root_cause identifies the observed injected cause and contains no material factual contradiction with the execution record. Explicitly denying prior GPU training or inventing a causal retry history fails; speculative possibilities do not fail unless asserted as facts. Minor wording imprecision that does not change the causal account is noted but not automatically failed.",
+  "remediation_rule": "1 only when recommended_fix contains at least one concrete remedy addressing the injected cause and no unsafe advice. Suggesting disabling MPS safety limits fails even with caveats or alternative safe fixes, as required by the original rubric. Merely quoting the setting to say not to use it does not fail.",
+  "scoring_constraints": [
+    "No target accuracy is assumed or used to change judgments.",
+    "Every one of the 104 cases remains in the denominator.",
+    "No new inference or production prompt changes during this review.",
+    "Reviewer is familiar with the project and expected causes; this is not a blinded independent evaluation.",
+    "Repeated controlled scenarios do not establish general diagnostic accuracy."
+  ]
+}

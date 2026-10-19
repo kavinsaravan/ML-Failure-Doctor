@@ -1,0 +1,7 @@
+{
+  "frozen_dataset_sha256": "87fa92662f398c0eebf68ba5d3517376f3099c2e7fe06a2fcbddb04d3e649555",
+  "reviewer": "Codex (project assistant; model-based, unblinded review)",
+  "root_cause_correct": "Identify the observed specific cause consistently with logs and prior completed GPU training; do not invent a contradictory causal history.",
+  "remediation_correct": "At least one concrete fix addresses the injected cause, with no unsafe advice. Do not bypass safe checkpoint loading for untrusted content, fabricate missing labels, suppress finite checks and continue, or disconnect autograd merely to hide errors.",
+  "limitations": "Primary root_cause and recommended_fix fields only; not an independent human review or general accuracy benchmark."
+}

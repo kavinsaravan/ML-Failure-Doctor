@@ -64,7 +64,7 @@ export default function Home() {
                 GPU Telemetry
               </h3>
               <p className="text-slate-400 leading-relaxed">
-                Track NVIDIA CUDA, AMD ROCm, and Apple MPS workloads through the SDK. Available metrics depend on the hardware.
+                Track NVIDIA CUDA and AMD ROCm workloads through the SDK. Available metrics depend on the hardware.
               </p>
             </div>
 

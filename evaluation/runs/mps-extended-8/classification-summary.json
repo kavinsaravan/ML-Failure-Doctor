@@ -1,0 +1,92 @@
+{
+  "ai_reports": 0,
+  "ai_reports_without_served_model": 0,
+  "by_provenance": {
+    "executed_application_error_after_gpu_work": {
+      "total": 4,
+      "correct": 4,
+      "accuracy_percent": 100
+    },
+    "executed_gpu_autograd_error": {
+      "total": 3,
+      "correct": 3,
+      "accuracy_percent": 100
+    },
+    "executed_gpu_numerical_error": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    }
+  },
+  "by_scenario_family": {
+    "corrupt-checkpoint": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    },
+    "csv-column-missing": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    },
+    "empty-optimizer": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    },
+    "gradient-disabled": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    },
+    "inplace-leaf-update": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    },
+    "invalid-learning-rate": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    },
+    "non-scalar-gradient": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    },
+    "nonfinite-loss": {
+      "total": 1,
+      "correct": 1,
+      "accuracy_percent": 100
+    }
+  },
+  "classification": {
+    "total": 8,
+    "correct": 8,
+    "accuracy_percent": 100
+  },
+  "classification_origin": "Production heuristic classifier in both modes; Fireworks does not independently choose the category.",
+  "code_revision": "a63525093f0945825fa1bc3ec7219496ab8888ae",
+  "confusion_matrix": {
+    "UNKNOWN_ERROR": {
+      "UNKNOWN_ERROR": 8
+    }
+  },
+  "dataset_description": "Controlled failures after verified GPU forward/backward/optimizer computation and live telemetry. Repeated trials establish execution count, not independent diagnostic diversity.",
+  "dataset_sha256": "87fa92662f398c0eebf68ba5d3517376f3099c2e7fe06a2fcbddb04d3e649555",
+  "generated_at": "2026-10-19T00:01:52.271606Z",
+  "limitations": "Controlled exploratory dataset; consult the dataset description and per-case provenance for hardware execution. Repeated variants are correlated. Wilson interval assumes independent cases and is descriptive only.",
+  "macro_f1_percent": 100,
+  "mode": "rules",
+  "model": "",
+  "remediation_correctness": "pending human review",
+  "root_cause_correctness": "pending human review",
+  "rules_reports": 8,
+  "scenario_family_count": 8,
+  "served_models": {},
+  "wilson_95_percent_interval": [
+    67.55843804891231,
+    100
+  ],
+  "working_tree_dirty": true
+}

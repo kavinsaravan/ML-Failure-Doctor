@@ -13,7 +13,7 @@ func TestOwnershipMigrationAndKeysSurviveRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := d.CreateWorkload("old workload", "ML_JOB", "running")
-	if _, err := d.Exec("DROP INDEX workloads_owner; ALTER TABLE workloads DROP COLUMN owner_id"); err != nil {
+	if _, err := d.Exec("DROP INDEX workloads_owner; DROP INDEX workloads_client_run; ALTER TABLE workloads DROP COLUMN owner_id"); err != nil {
 		t.Fatal(err)
 	}
 	d.Close()

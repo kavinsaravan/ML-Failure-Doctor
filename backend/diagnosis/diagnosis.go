@@ -11,6 +11,8 @@ import (
 )
 
 type Report struct {
+	RequestedModel      string    `json:"requested_model,omitempty"`
+	ServedModel         string    `json:"served_model,omitempty"`
 	AIUnavailableReason string    `json:"ai_unavailable_reason,omitempty"`
 	FailureType         string    `json:"failure_type"`
 	Confidence          float64   `json:"confidence"`
@@ -55,7 +57,7 @@ func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
 
 	// Try AI diagnosis if Fireworks client is available
 	if fwClient != nil && workload.JobLogs != nil {
-		aiReport := callAI(fwClient, workload, failureType, evidence, classResult.Confidence)
+		aiReport := callAI(fwClient, workload, failureType, classResult.Confidence)
 		if aiReport != nil {
 			return *aiReport
 		}
@@ -63,14 +65,13 @@ func RunDiagnosis(workload *db.Workload, fwClient *fireworks.Client) Report {
 
 	// Fallback to rule-based diagnosis
 	report := ruleBasedDiagnosis(failureType, evidence, classResult.Confidence)
-	if failureType == classifier.GPUOutOfMemory && (strings.Contains(strings.ToLower(logs), "mps") || strings.Contains(gpuMetrics, "torch.mps")) {
-		report.RootCause = "Apple MPS memory allocation failed: the requested allocation exceeded the available memory or the process allocation limit"
-		report.RecommendedFix = "Reduce the requested tensor size or batch size; release unused tensors and retained computation graphs; use gradient accumulation for training. torch.mps.empty_cache() releases unused cached allocations, not live tensors. Keep MPS memory safety limits enabled."
+	if fwClient != nil {
+		report.RequestedModel = fwClient.Model
 	}
 	return report
 }
 
-func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType string, evidence []string, confidence float64) *Report {
+func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType string, confidence float64) *Report {
 	// Build comprehensive workload data for AI diagnosis
 	runtimeStr := "unknown"
 	if workload.RuntimeSeconds != nil {
@@ -113,6 +114,8 @@ func callAI(fwClient *fireworks.Client, workload *db.Workload, failureType strin
 
 	// Convert DiagnosisResult to Report format
 	report := Report{
+		RequestedModel:  result.RequestedModel,
+		ServedModel:     result.ServedModel,
 		FailureType:     failureType,
 		Confidence:      confidence,
 		RootCause:       result.RootCause,
@@ -236,15 +239,4 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 	}
 
 	return report
-}
-
-func formatEvidence(evidence []string) string {
-	result := ""
-	for i, line := range evidence {
-		result += fmt.Sprintf("%d. %s\n", i+1, line)
-	}
-	if result == "" {
-		result = "(No specific error lines extracted)"
-	}
-	return result
 }

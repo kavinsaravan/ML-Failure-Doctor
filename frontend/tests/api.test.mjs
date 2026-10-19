@@ -50,3 +50,30 @@ test('workspace creation sends no existing credentials', async () => {
     assert.deepEqual(JSON.parse(captured.options.body),{name:'Alice'});
   } finally { globalThis.fetch=originalFetch; api.setAPIKey(''); api.clearFireworksCredentials(); }
 });
+
+test('Fireworks defaults to auto while preserving explicit model overrides', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  try {
+    globalThis.fetch = async (url, options) => {
+      requests.push({url, options});
+      return new Response('{}', {status: 200});
+    };
+    api.setAPIKey('alice');
+    for (const model of [undefined, '', '   ']) {
+      api.setFireworksCredentials('secret', model);
+      await api.diagnoseWorkload('1');
+      assert.equal(requests.at(-1).options.headers['X-Fireworks-Model'], 'auto');
+    }
+    api.setFireworksCredentials('secret', 'chosen-model');
+    await api.diagnoseWorkload('1');
+    assert.equal(requests.at(-1).options.headers['X-Fireworks-Model'], 'chosen-model');
+    api.clearFireworksCredentials();
+    await api.diagnoseWorkload('1');
+    assert.equal(requests.at(-1).options.headers['X-Fireworks-API-Key'], undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+    api.setAPIKey('');
+    api.clearFireworksCredentials();
+  }
+});

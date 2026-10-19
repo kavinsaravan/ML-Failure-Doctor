@@ -185,10 +185,3 @@ func TestCalculateWastedGPUSeconds(t *testing.T) {
 		})
 	}
 }
-
-func TestMPSOutOfMemory(t *testing.T) {
-	result := ClassifyWithConfidence("RuntimeError: MPS backend out of memory (MPS allocated: 4.00 GB)", "")
-	if result.FailureType != GPUOutOfMemory {
-		t.Fatalf("unexpected classification: %+v", result)
-	}
-}

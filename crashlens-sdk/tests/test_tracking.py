@@ -3,6 +3,7 @@ import json
 import sys
 import threading
 import time
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from IPython.core.interactiveshell import InteractiveShell
@@ -11,6 +12,9 @@ from crashlens import jupyter
 
 class TrackingTests(unittest.TestCase):
     def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        patch.dict('os.environ', {'CRASHLENS_OUTBOX_DIR': directory.name}).start()
         self.post = patch("crashlens.workload_tracker.requests.post").start()
         self.put = patch("crashlens.workload_tracker.requests.put").start()
         patch("crashlens.workload_tracker.METRICS_AVAILABLE", False).start()
@@ -29,8 +33,8 @@ class TrackingTests(unittest.TestCase):
         self.assertEqual(headers["X-Fireworks-Model"], "user-model")
         self.assertEqual(headers["Authorization"], "Bearer crashlens")
         self.assertNotIn("X-Fireworks-API-Key", tracker.headers)
-        with self.assertRaises(ValueError):
-            WorkloadTracker("http://test", fireworks_api_key="secret").diagnose(7)
+        WorkloadTracker("http://test", fireworks_api_key="secret").diagnose(7)
+        self.assertEqual(self.post.call_args.kwargs["headers"]["X-Fireworks-Model"], "auto")
 
     def test_interruptions_and_exceptions_report_failure(self):
         for error in [KeyboardInterrupt(), SystemExit(2), RuntimeError("broken")]:
@@ -42,7 +46,7 @@ class TrackingTests(unittest.TestCase):
                 self.assertEqual(data["status"], "failed")
                 self.assertIn(type(error).__name__, data["job_logs"])
                 self.assertGreaterEqual(data["runtime_seconds"], 0)
-                self.assertEqual(self.put.call_args.kwargs["timeout"], 15)
+                self.assertEqual(self.put.call_args.kwargs["timeout"], 3)
 
     def test_reporting_failure_preserves_training_exception(self):
         self.put.return_value.raise_for_status.side_effect = RuntimeError("HTTP 500")
@@ -133,6 +137,26 @@ class TrackingTests(unittest.TestCase):
         self.assertIn("Pin versions", html)
         self.assertIn("Rule-based", html)
         self.assertNotIn("<script>", html)
+
+    def test_notebook_workload_escapes_external_failure_label(self):
+        tracker = jupyter.JupyterWorkloadTracker("http://test")
+        tracker.in_jupyter = True
+        label = '<img src=x onerror="alert(1)">'
+        with patch.object(tracker, "_get_workload", return_value={
+            "id": 7, "name": "Training", "status": "failed", "failure_type": label,
+        }), patch.object(jupyter, "display") as display:
+            tracker.show_workload(7)
+        html = display.call_args.args[0].data
+        self.assertNotIn(label, html)
+        self.assertIn("&lt;img", html)
+
+    def test_notebook_initialization_escapes_backend_url(self):
+        magics = jupyter.CrashLensMagics(shell=InteractiveShell.instance())
+        with patch.object(jupyter, "display") as display:
+            magics.crashlens_init('https://example.test/<img src=x onerror="alert(1)">')
+        html = display.call_args.args[0].data
+        self.assertNotIn("<img", html)
+        self.assertIn("&lt;img", html)
 
 if __name__ == "__main__":
     unittest.main()

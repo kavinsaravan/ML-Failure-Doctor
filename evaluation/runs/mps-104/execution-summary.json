@@ -1,0 +1,37 @@
+{
+  "executions": 104,
+  "unique_workload_ids": 104,
+  "verified_gpu_training_runs": 104,
+  "verified_live_api_telemetry_runs": 104,
+  "scenario_families": {
+    "allocation-256": 13,
+    "allocation-384": 13,
+    "matmul-shape": 13,
+    "reshape-size": 13,
+    "dtype-or-device": 13,
+    "checkpoint": 13,
+    "dataset": 13,
+    "dependency": 13
+  },
+  "device": "Apple MPS",
+  "torch_version": "2.12.0",
+  "collection_start_utc": "2026-10-18T19:30:33+00:00",
+  "collection_end_utc": "2026-10-18T19:34:21.033192+00:00",
+  "collection_span_seconds": 228.033192,
+  "source_revision": "9b330234128524c99d8c100ffefa80b60e07c302",
+  "collection_patch_sha256": "b5d2411ff0999730615faef3054cab682dabcd42c37841bb8aeccfbfc50de1fe",
+  "collector_sha256": "46d4ad7f241911d32f3fae3047fe5ae010c9e32068acad1a84395b66e1890c47",
+  "dataset_sha256": "37af02955551b194d9426fd2f26bbff8f7d34b716209fc62fed5d233a8bce61a",
+  "sdk_source_sha256": {
+    "metrics.py": "da09216e9aa45d562d2eb96c65d7640f9a4b2bbead0e8a1707247305c19ee4e0",
+    "workload_tracker.py": "35ba2d8b5a03c55358dc00ff1593a9f0e2cdc1da1236518682ad38961d83ffa5",
+    "__init__.py": "6049d1212781c059c3be0cf65d6c20c2a1b987d381a99d47bfa9ad0142214410",
+    "jupyter.py": "0324c28d9093a5f828fea5c24246d9dca2e8bafd947aabb63cf01a19a2c2ac14"
+  },
+  "limitations": [
+    "Sequential small controlled workloads, not production users or concurrent-job capacity.",
+    "Eight repeated scenario families; repeated executions do not establish independent diagnostic diversity.",
+    "Collected on 2026-10-18; does not establish execution history before this date.",
+    "This records execution and telemetry evidence, not root-cause correctness or debugging/compute savings."
+  ]
+}

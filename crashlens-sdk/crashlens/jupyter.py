@@ -49,8 +49,8 @@ class JupyterWorkloadTracker(WorkloadTracker):
             model.fit(X_train, y_train, epochs=10)
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None):
-        super().__init__(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model)
+    def __init__(self, api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
+        super().__init__(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model, device=device, outbox_dir=outbox_dir)
         self.in_jupyter = self._check_jupyter()
 
     def _check_jupyter(self) -> bool:
@@ -162,7 +162,7 @@ class JupyterWorkloadTracker(WorkloadTracker):
         <div style="border: 2px solid #3498db; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #ebf5fb;">
             <h4 style="color: #2980b9; margin: 0;">{status_emoji} Workload Running</h4>
             <p style="margin: 10px 0 0 0;"><strong>Name:</strong> {escape(str(name))}</p>
-            <p style="margin: 5px 0 0 0;"><strong>Workload ID:</strong> {workload_id}</p>
+            <p style="margin: 5px 0 0 0;"><strong>Workload ID:</strong> {workload_id if workload_id is not None else 'Pending connection'}</p>
             <p style="margin: 5px 0 0 0;"><strong>Elapsed:</strong> {elapsed:.1f}s</p>
         </div>
         """
@@ -170,6 +170,9 @@ class JupyterWorkloadTracker(WorkloadTracker):
 
     def _display_success(self, name: str, runtime: float, workload_id: int):
         """Display success message"""
+        if workload_id is None:
+            print(f"✓ Workload '{name}' completed in {runtime:.1f}s; telemetry upload is pending. Call tracker.flush_pending() when connected.")
+            return
         if not self.in_jupyter:
             print(f"✓ Workload '{escape(str(name))}' completed successfully in {runtime:.1f}s")
             return
@@ -189,6 +192,9 @@ class JupyterWorkloadTracker(WorkloadTracker):
 
     def _display_failure(self, name: str, runtime: float, workload_id: int, error: str):
         """Display failure message"""
+        if workload_id is None:
+            print(f"✗ Workload '{name}' failed after {runtime:.1f}s; telemetry upload is pending. Call tracker.flush_pending() when connected.")
+            return
         if not self.in_jupyter:
             print(f"✗ Workload '{escape(str(name))}' failed after {runtime:.1f}s")
             print(f"Error: {error}")
@@ -222,14 +228,17 @@ class JupyterWorkloadTracker(WorkloadTracker):
                 model.fit(X_train, y_train)
         """
         workload_id = None
+        entered = False
         start = time.monotonic()
         try:
             with super().track(name) as workload_id:
+                entered = True
                 if self.in_jupyter:
                     self._display_progress(workload_id, name, 0)
                 yield workload_id
         except BaseException as error:
-            if workload_id is not None:
+            workload_id = workload_id if workload_id is not None else self.last_workload_id
+            if entered:
                 if isinstance(error, SystemExit) and error.code in (None, 0):
                     self._display_success(name, time.monotonic() - start, workload_id)
                     raise
@@ -237,15 +246,16 @@ class JupyterWorkloadTracker(WorkloadTracker):
                     self._display_failure(name, time.monotonic() - start, workload_id, str(error))
                 except Exception:
                     logging.getLogger(__name__).warning("CrashLens display failed", exc_info=True)
-                if auto_diagnose:
+                if auto_diagnose and workload_id is not None:
                     try:
                         self._display_diagnosis(self.diagnose(workload_id, display=False))
                     except Exception:
                         logging.getLogger(__name__).warning("CrashLens diagnosis failed", exc_info=True)
             raise
         else:
+            workload_id = workload_id if workload_id is not None else self.last_workload_id
             self._display_success(name, time.monotonic() - start, workload_id)
-            if display_metrics and self.in_jupyter:
+            if display_metrics and self.in_jupyter and workload_id is not None:
                 self._display_metrics(workload_id)
 
     def diagnose(self, workload_id: int, display: bool = True) -> Dict[str, Any]:
@@ -259,9 +269,7 @@ class JupyterWorkloadTracker(WorkloadTracker):
         Returns:
             dict with root_cause, recommended_fixes, evidence, etc.
         """
-        response = requests.post(f"{self.api_url}/workloads/{workload_id}/diagnose", headers=self.headers, timeout=75)
-        response.raise_for_status()
-        diagnosis = response.json()
+        diagnosis = super().diagnose(workload_id)
 
         if display:
             self._display_diagnosis(diagnosis)
@@ -309,7 +317,7 @@ class JupyterWorkloadTracker(WorkloadTracker):
                 </tr>
                 <tr>
                     <td style="padding: 8px; font-weight: bold;">Failure Type:</td>
-                    <td style="padding: 8px;">{workload.get('failure_type', 'N/A')}</td>
+                    <td style="padding: 8px;">{escape(str(workload.get('failure_type', 'N/A')))}</td>
                 </tr>
                 <tr style="background-color: #f8f9fa;">
                     <td style="padding: 8px; font-weight: bold;">Wasted GPU-sec:</td>
@@ -362,7 +370,7 @@ if JUPYTER_AVAILABLE:
             display(HTML(f"""
             <div style="border: 2px solid #27ae60; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #eafaf1;">
                 <h4 style="color: #27ae60; margin: 0;">✓ CrashLens Initialized</h4>
-                <p style="margin: 10px 0 0 0;">Connected to: <code>{api_url}</code></p>
+                <p style="margin: 10px 0 0 0;">Connected to: <code>{escape(api_url)}</code></p>
                 <p style="margin: 10px 0 0 0;">Auth: <code>{'Enabled' if api_key else 'Disabled (set CRASHLENS_API_KEY)'}</code></p>
                 <p style="margin: 10px 0 0 0;">Use <code>%%crashlens_track "Job Name"</code> to track cells</p>
             </div>

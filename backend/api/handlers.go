@@ -5,14 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 
 	"crashlens/db"
 	"crashlens/diagnosis"
 	"crashlens/fireworks"
 	"crashlens/middleware"
-	"crashlens/runner"
 
 	"github.com/gorilla/mux"
 )
@@ -20,7 +19,6 @@ import (
 type Server struct {
 	DB                  *db.DB
 	FWClient            *fireworks.Client
-	Runner              *runner.Manager
 	FireworksHTTPClient *http.Client
 	WorkspaceLimiter    *middleware.IPRateLimiter
 }
@@ -36,9 +34,10 @@ func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name   string `json:"name"`
-		Type   string `json:"type"`
-		Status string `json:"status"`
+		ClientRunID string `json:"client_run_id"`
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		Status      string `json:"status"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -54,14 +53,49 @@ func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		req.Status = "pending"
 	}
 
+	req.Name = strings.TrimSpace(req.Name)
+	if err := validateIdentity(req.Name, req.Type); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	if !validStatus(req.Status) {
+		http.Error(w, "Invalid status", 400)
+		return
+	}
+	if len(req.ClientRunID) > 128 || strings.TrimSpace(req.ClientRunID) != req.ClientRunID {
+		http.Error(w, "client_run_id must be at most 128 bytes without surrounding whitespace", 400)
+		return
+	}
+
 	// Create workload
-	id, err := s.DB.CreateWorkload(req.Name, req.Type, req.Status, middleware.RequestIdentity(r).Owner)
+	owner := middleware.RequestIdentity(r).Owner
+	var id int64
+	var err error
+	created := true
+	if req.ClientRunID == "" {
+		id, err = s.DB.CreateWorkload(req.Name, req.Type, req.Status, owner)
+	} else {
+		id, created, err = s.DB.CreateClientWorkload(req.Name, req.Type, req.Status, owner, req.ClientRunID)
+	}
 	if err != nil {
+		if errors.Is(err, db.ErrClientRunConflict) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	if !created {
+		existing, err := s.DB.GetWorkload(strconv.FormatInt(id, 10), owner)
+		if err != nil {
+			http.Error(w, "Unable to retrieve registered workload", 500)
+			return
+		}
+		json.NewEncoder(w).Encode(existing)
+		return
+	}
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":     id,
@@ -114,13 +148,17 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateUpdates(updates); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	previousStatus := existing.Status
-	if updates.Status == "running" && (existing.Status == "failed" || existing.Status == "succeeded") {
-		http.Error(w, "Completed workloads cannot return to running", http.StatusConflict)
+	if !validTransition(existing.Status, updates.Status) {
+		http.Error(w, "Invalid workload status transition", http.StatusConflict)
 		return
 	}
 	// Reports are invalidated whenever their input changes.
-	if (updates.Status != "" && updates.Status != existing.Status) || updates.JobLogs != nil || updates.GPUMetrics != nil || updates.FailureType != nil || updates.RuntimeSeconds != nil {
+	if (updates.Status != "" && updates.Status != existing.Status) || changed(existing.JobLogs, updates.JobLogs) || changed(existing.GPUMetrics, updates.GPUMetrics) || changed(existing.FailureType, updates.FailureType) || changed(existing.RuntimeSeconds, updates.RuntimeSeconds) {
 		existing.FailureReport = nil
 		if updates.FailureType == nil {
 			existing.FailureType = nil
@@ -147,10 +185,10 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "runtime_seconds cannot be negative", http.StatusBadRequest)
 			return
 		}
-		existing.RuntimeSeconds = updates.RuntimeSeconds
-		if updates.WastedGPUSeconds == nil {
+		if updates.WastedGPUSeconds == nil && changed(existing.RuntimeSeconds, updates.RuntimeSeconds) {
 			existing.WastedGPUSeconds = nil
 		}
+		existing.RuntimeSeconds = updates.RuntimeSeconds
 	}
 	if updates.ExitCode != nil {
 		existing.ExitCode = updates.ExitCode
@@ -205,74 +243,6 @@ func (s *Server) ClearAllWorkloadsHandler(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "All workloads cleared successfully",
-	})
-}
-
-func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name     string `json:"name"`
-		Template string `json:"template"`
-		Type     string `json:"type"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Set default type if not provided
-	if req.Type == "" {
-		req.Type = "ML_JOB"
-	}
-
-	// SECURITY: Only allow predefined templates, never accept arbitrary script paths
-	templateMap := map[string]string{
-		"gpu_oom":            "gpu_oom.py",
-		"missing_checkpoint": "missing_checkpoint.py",
-		"dependency_error":   "dependency_error.py",
-		"data_path_error":    "data_path_error.py",
-		"timeout":            "timeout.py",
-		"successful":         "successful_training.py",
-	}
-
-	scriptPath, ok := templateMap[req.Template]
-	if !ok {
-		http.Error(w, "Invalid template name. Valid templates: gpu_oom, missing_checkpoint, dependency_error, data_path_error, timeout, successful", http.StatusBadRequest)
-		return
-	}
-
-	if req.Name == "" {
-		req.Name = "Test Job: " + req.Template
-	}
-
-	jobsDir := os.Getenv("JOBS_DIR")
-	if jobsDir == "" {
-		jobsDir = "./jobs"
-		if _, err := os.Stat(jobsDir); err != nil {
-			jobsDir = "../jobs"
-		}
-	}
-	if s.Runner == nil {
-		http.Error(w, "Job runner unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	id, err := s.Runner.Submit(req.Name, req.Type, filepath.Join(jobsDir, scriptPath), middleware.RequestIdentity(r).Owner)
-	if err != nil {
-		if errors.Is(err, runner.ErrQueueFull) || errors.Is(err, runner.ErrStopped) {
-			w.Header().Set("Retry-After", "5")
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"workload_id": id,
-		"status":      "pending",
-		"message":     "Job queued for execution",
 	})
 }
 
@@ -365,8 +335,8 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 	key := strings.TrimSpace(r.Header.Get("X-Fireworks-API-Key"))
 	model := strings.TrimSpace(r.Header.Get("X-Fireworks-Model"))
 	if key != "" {
-		if model == "" || len(model) > 256 || len(key) > 4096 {
-			http.Error(w, "Provide a Fireworks model identifier with your Fireworks key", 400)
+		if len(model) > 256 || len(key) > 4096 {
+			http.Error(w, "Fireworks credentials or model identifier exceed the allowed length", 400)
 			return
 		}
 		client = fireworks.NewRequestClient(key, model)
@@ -379,13 +349,13 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 	report := diagnosis.RunDiagnosis(workload, client)
 	if report.Source == "rules" {
 		if client == nil {
-			report.AIUnavailableReason = "Add your Fireworks API key and a tool-capable model to generate an AI diagnosis."
+			report.AIUnavailableReason = "Add your Fireworks API key to generate an AI diagnosis using automatic model selection."
 		} else {
 			report.AIUnavailableReason = "Fireworks did not return a usable diagnosis. Check your key, model access, credits, and tool-calling support."
 		}
 	}
 
-	// Persist both sources so reloads and MCP queries retain fallback reports.
+	// Persist both sources so dashboard reloads and API clients retain fallback reports.
 	reportJSON, err := json.Marshal(report)
 	if err != nil {
 		http.Error(w, "Failed to encode diagnosis", http.StatusInternalServerError)

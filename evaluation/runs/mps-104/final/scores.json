@@ -1,0 +1,168 @@
+{
+  "review_scores": {
+    "all": {
+      "root_cause_correct": {
+        "cases": 104,
+        "reviewed": 104,
+        "correct": 97,
+        "complete": true,
+        "accuracy_percent": 93.26923076923077
+      },
+      "remediation_correct": {
+        "cases": 104,
+        "reviewed": 104,
+        "correct": 79,
+        "complete": true,
+        "accuracy_percent": 75.96153846153847
+      }
+    },
+    "ai": {
+      "root_cause_correct": {
+        "cases": 104,
+        "reviewed": 104,
+        "correct": 97,
+        "complete": true,
+        "accuracy_percent": 93.26923076923077
+      },
+      "remediation_correct": {
+        "cases": 104,
+        "reviewed": 104,
+        "correct": 79,
+        "complete": true,
+        "accuracy_percent": 75.96153846153847
+      }
+    },
+    "family:allocation-256": {
+      "root_cause_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 7.6923076923076925
+      }
+    },
+    "family:allocation-384": {
+      "root_cause_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 12,
+        "complete": true,
+        "accuracy_percent": 92.3076923076923
+      },
+      "remediation_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 0,
+        "complete": true,
+        "accuracy_percent": 0.0
+      }
+    },
+    "family:checkpoint": {
+      "root_cause_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 12,
+        "complete": true,
+        "accuracy_percent": 92.3076923076923
+      },
+      "remediation_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:dataset": {
+      "root_cause_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 8,
+        "complete": true,
+        "accuracy_percent": 61.53846153846154
+      },
+      "remediation_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:dependency": {
+      "root_cause_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:dtype-or-device": {
+      "root_cause_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:matmul-shape": {
+      "root_cause_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:reshape-size": {
+      "root_cause_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 13,
+        "reviewed": 13,
+        "correct": 13,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    }
+  },
+  "ai_report_coverage_percent": 100.0,
+  "limitations": "Correctness comes from reviewer judgments, not automatic category matches. Incomplete review sets have no accuracy score. Repeated scenario families are correlated; execution count is not independent diagnostic diversity.",
+  "predictions_sha256": "c6d15a3f925e5f19297d81ba880f107adec9c1da766cba6d7f22ceb0c565939a",
+  "reviews_sha256": "c7fe4704fc0044aa30bcc99f8ea154569f3f716f3dea235d0deb7882e7c55688"
+}

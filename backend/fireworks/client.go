@@ -71,12 +71,15 @@ type FunctionCallResult struct {
 }
 
 type Response struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message Message `json:"message"`
 	} `json:"choices"`
 }
 
 type DiagnosisResult struct {
+	RequestedModel   string   `json:"-"`
+	ServedModel      string   `json:"-"`
 	RootCause        string   `json:"root_cause"`
 	Evidence         []string `json:"evidence"`
 	RecommendedFixes []string `json:"recommended_fixes"`
@@ -91,7 +94,13 @@ type Client struct {
 	Client  *http.Client
 }
 
+const DefaultModel = "auto"
+
 func NewRequestClient(apiKey, model string) *Client {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = DefaultModel
+	}
 	return &Client{APIKey: apiKey, Model: model, BaseURL: "https://api.fireworks.ai/inference/v1/chat/completions", Client: &http.Client{Timeout: 60 * time.Second}}
 }
 
@@ -101,18 +110,8 @@ func NewClient() *Client {
 		return nil
 	}
 
-	// Operator AI is enabled only with explicit credentials and model selection.
-	model := os.Getenv("FIREWORKS_MODEL")
-	if model == "" {
-		return nil
-	}
-
-	return &Client{
-		APIKey:  apiKey,
-		BaseURL: "https://api.fireworks.ai/inference/v1/chat/completions",
-		Model:   model,
-		Client:  &http.Client{Timeout: 60 * time.Second},
-	}
+	// Routing does not enable inference without the operator's explicit key.
+	return NewRequestClient(apiKey, os.Getenv("FIREWORKS_MODEL"))
 }
 
 func (c *Client) DiagnoseFailure(workloadData string) (*DiagnosisResult, error) {
@@ -164,8 +163,7 @@ func (c *Client) DiagnoseFailure(workloadData string) (*DiagnosisResult, error) 
 	// Create the diagnosis prompt
 	systemPrompt := `You are an ML infrastructure debugging assistant specializing in GPU workloads across all platforms.
 Analyze the workload failure data and provide a comprehensive diagnosis.
-You support NVIDIA GPUs (CUDA/cuDNN), AMD GPUs (ROCm/HIP), Apple GPUs (Metal/MPS), and cloud GPU platforms (AWS, Google Cloud, Azure).
-For torch.mps telemetry, memory usage is process Metal driver allocation and the denominator is a recommended working set, not physical VRAM. Utilization and temperature may be unavailable.
+You support NVIDIA GPUs (CUDA/cuDNN) and AMD GPUs (ROCm/HIP), including these GPUs on cloud platforms (AWS, Google Cloud, Azure).
 Focus on GPU-specific issues like memory management, driver compatibility, framework compatibility, and runtime errors.`
 
 	userPrompt := `Given the following workload failure data, diagnose the issue:
@@ -249,5 +247,8 @@ Provide:
 	if message.ToolCalls[0].Function.Name != "diagnose_ml_failure" || strings.TrimSpace(result.RootCause) == "" || len(result.RecommendedFixes) == 0 || len(result.Evidence) == 0 {
 		return nil, fmt.Errorf("Fireworks returned an incomplete diagnosis")
 	}
+	// Provider metadata, never values generated inside the tool arguments.
+	result.RequestedModel = c.Model
+	result.ServedModel = fireworksResp.Model
 	return &result, nil
 }

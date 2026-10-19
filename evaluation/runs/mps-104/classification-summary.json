@@ -1,0 +1,102 @@
+{
+  "ai_reports": 0,
+  "by_provenance": {
+    "executed_application_error_after_gpu_work": {
+      "total": 39,
+      "correct": 39,
+      "accuracy_percent": 100
+    },
+    "executed_gpu_allocator_error": {
+      "total": 26,
+      "correct": 26,
+      "accuracy_percent": 100
+    },
+    "executed_gpu_operation_error": {
+      "total": 39,
+      "correct": 39,
+      "accuracy_percent": 100
+    }
+  },
+  "by_scenario_family": {
+    "allocation-256": {
+      "total": 13,
+      "correct": 13,
+      "accuracy_percent": 100
+    },
+    "allocation-384": {
+      "total": 13,
+      "correct": 13,
+      "accuracy_percent": 100
+    },
+    "checkpoint": {
+      "total": 13,
+      "correct": 13,
+      "accuracy_percent": 100
+    },
+    "dataset": {
+      "total": 13,
+      "correct": 13,
+      "accuracy_percent": 100
+    },
+    "dependency": {
+      "total": 13,
+      "correct": 13,
+      "accuracy_percent": 100
+    },
+    "dtype-or-device": {
+      "total": 13,
+      "correct": 13,
+      "accuracy_percent": 100
+    },
+    "matmul-shape": {
+      "total": 13,
+      "correct": 13,
+      "accuracy_percent": 100
+    },
+    "reshape-size": {
+      "total": 13,
+      "correct": 13,
+      "accuracy_percent": 100
+    }
+  },
+  "classification": {
+    "total": 104,
+    "correct": 104,
+    "accuracy_percent": 100
+  },
+  "classification_origin": "Production heuristic classifier in both modes; Fireworks does not independently choose the category.",
+  "code_revision": "9b330234128524c99d8c100ffefa80b60e07c302",
+  "confusion_matrix": {
+    "DATA_PATH_ERROR": {
+      "DATA_PATH_ERROR": 13
+    },
+    "DEPENDENCY_ERROR": {
+      "DEPENDENCY_ERROR": 13
+    },
+    "GPU_OUT_OF_MEMORY": {
+      "GPU_OUT_OF_MEMORY": 26
+    },
+    "MISSING_CHECKPOINT": {
+      "MISSING_CHECKPOINT": 13
+    },
+    "UNKNOWN_ERROR": {
+      "UNKNOWN_ERROR": 39
+    }
+  },
+  "dataset_description": "Controlled failures after verified GPU forward/backward/optimizer computation and live telemetry. Repeated trials establish execution count, not independent diagnostic diversity.",
+  "dataset_sha256": "37af02955551b194d9426fd2f26bbff8f7d34b716209fc62fed5d233a8bce61a",
+  "generated_at": "2026-10-18T19:35:14.459784Z",
+  "limitations": "Controlled exploratory dataset; consult the dataset description and per-case provenance for hardware execution. Repeated variants are correlated. Wilson interval assumes independent cases and is descriptive only.",
+  "macro_f1_percent": 100,
+  "mode": "rules",
+  "model": "",
+  "remediation_correctness": "pending human review",
+  "root_cause_correctness": "pending human review",
+  "rules_reports": 104,
+  "scenario_family_count": 8,
+  "wilson_95_percent_interval": [
+    96.43773831248794,
+    99.99999999999999
+  ],
+  "working_tree_dirty": true
+}

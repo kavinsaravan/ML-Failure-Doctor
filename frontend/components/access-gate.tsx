@@ -31,13 +31,13 @@ export default function AccessGate({ children }: { children: ReactNode }) {
     catch { setCopyStatus('Copy unavailable. Reveal and save the key manually.'); }
   };
   const [fireworksKey, setFireworksKey] = useState('');
-  const [fireworksModel, setFireworksModel] = useState('');
+  const [fireworksModel, setFireworksModel] = useState('auto');
   const [fireworksReady, setFireworksReady] = useState(false);
   const saveFireworks = (event: FormEvent) => {
     event.preventDefault(); api.setFireworksCredentials(fireworksKey, fireworksModel);
     setFireworksKey(''); setFireworksReady(true);
   };
-  const clearFireworks = () => { api.clearFireworksCredentials(); setFireworksKey(''); setFireworksModel(''); setFireworksReady(false); };
+  const clearFireworks = () => { api.clearFireworksCredentials(); setFireworksKey(''); setFireworksModel('auto'); setFireworksReady(false); };
   const check = useCallback(async () => {
     const token = ++attempt.current;
     const apply = (next: Access) => { if (token === attempt.current) { setAccess(next); setError(''); } };
@@ -54,7 +54,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (pathname === '/') return;
     const initial = setTimeout(() => void check(), 0);
-    const onAuthRequired = () => { setCreatedKey(''); setShowCreatedKey(false); setCopyStatus(''); api.clearFireworksCredentials(); setFireworksReady(false); setFireworksKey(''); setFireworksModel(''); void check(); };
+    const onAuthRequired = () => { setCreatedKey(''); setShowCreatedKey(false); setCopyStatus(''); api.clearFireworksCredentials(); setFireworksReady(false); setFireworksKey(''); setFireworksModel('auto'); void check(); };
     window.addEventListener('crashlens-auth-required', onAuthRequired);
     return () => { clearTimeout(initial); window.removeEventListener('crashlens-auth-required', onAuthRequired); };
   }, [pathname, check]);
@@ -82,15 +82,15 @@ export default function AccessGate({ children }: { children: ReactNode }) {
       </form>}
       {access === 'authenticated' && <div className="mt-4">
         {fireworksReady ? <div className="flex gap-3 items-center">
-          <span>AI diagnoses use your Fireworks account ({fireworksModel}).</span>
+          <span>AI diagnoses use your Fireworks account ({fireworksModel.trim() || 'auto'}).</span>
           <button onClick={clearFireworks} className="text-blue-300">Remove Fireworks key</button>
         </div> : <form onSubmit={saveFireworks} className="flex flex-wrap items-center gap-3">
           <label htmlFor="fireworks-key">Your Fireworks API key</label>
           <input id="fireworks-key" type="password" value={fireworksKey} onChange={e => setFireworksKey(e.target.value)} autoComplete="off" required className="bg-slate-800 border border-slate-600 rounded px-3 py-2" />
-          <label htmlFor="fireworks-model">Model identifier</label>
-          <input id="fireworks-model" value={fireworksModel} onChange={e => setFireworksModel(e.target.value)} placeholder="accounts/fireworks/models/..." required className="bg-slate-800 border border-slate-600 rounded px-3 py-2" />
+          <label htmlFor="fireworks-model">Model or router</label>
+          <input id="fireworks-model" value={fireworksModel} onChange={e => setFireworksModel(e.target.value)} placeholder="auto" className="bg-slate-800 border border-slate-600 rounded px-3 py-2" />
           <button className="bg-blue-600 rounded px-4 py-2">Use my Fireworks account</button>
-          <p className="w-full text-sm text-slate-400">Optional. Choose a model with tool calling. Your key stays in memory for this session and is sent only for diagnosis. New diagnoses use your credits; saved reports are reused. Without a key, user workloads receive rule-based reports.</p>
+          <p className="w-full text-sm text-slate-400">Optional. Auto lets Fireworks select a serverless model. You can also enter a specific model with tool calling. Your key stays in memory for this session and is sent only for diagnosis. New diagnoses use your credits; saved reports are reused. Without a key, user workloads receive rule-based reports.</p>
         </form>}
       </div>}
       {error && <p role="alert" className="text-red-300 mt-2">{error}</p>}

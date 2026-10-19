@@ -1,0 +1,20 @@
+{
+  "dataset_sha256": "87fa92662f398c0eebf68ba5d3517376f3099c2e7fe06a2fcbddb04d3e649555",
+  "executions": 8,
+  "unique_local_workload_ids": 8,
+  "gpu_training_and_live_telemetry_verified": true,
+  "device": "Apple MPS",
+  "provenance_counts": {
+    "executed_gpu_autograd_error": 3,
+    "executed_application_error_after_gpu_work": 4,
+    "executed_gpu_numerical_error": 1
+  },
+  "source_revision": "a63525093f0945825fa1bc3ec7219496ab8888ae",
+  "collector_working_tree_modified": true,
+  "collector_sha256": "d3592ea86c6a7e6605675bffd194570e59f1f41c7331a44e07c32ce473f74604",
+  "limitations": [
+    "Eight exploratory controlled cases, one per newly added scenario family.",
+    "Local workload IDs belong to a separate isolated database; do not deduplicate across independent databases by numeric ID alone.",
+    "No model-prompt tuning or production diagnosis changes were made for this run."
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "fireworks": {
+    "mode": "fireworks",
+    "samples": 8,
+    "duration_ms": [
+      10703,
+      13556,
+      12222,
+      10305,
+      10361,
+      23032,
+      11494,
+      12259
+    ],
+    "median_ms": 11858.0,
+    "min_ms": 10305,
+    "max_ms": 23032,
+    "timing_scope": "Elapsed production diagnosis function in CLI; AI includes provider/network call, rules excludes remote inference. Not end-to-end dashboard latency.",
+    "resolution_ms": 1,
+    "limitations": "Eight sequential exploratory cases, one per family; no SLA or load-capacity claim. Values recorded as 0 ms mean below timer resolution."
+  },
+  "rules": {
+    "mode": "rules",
+    "samples": 8,
+    "duration_ms": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "median_ms": 0.0,
+    "min_ms": 0,
+    "max_ms": 0,
+    "timing_scope": "Elapsed production diagnosis function in CLI; AI includes provider/network call, rules excludes remote inference. Not end-to-end dashboard latency.",
+    "resolution_ms": 1,
+    "limitations": "Eight sequential exploratory cases, one per family; no SLA or load-capacity claim. Values recorded as 0 ms mean below timer resolution."
+  }
+}

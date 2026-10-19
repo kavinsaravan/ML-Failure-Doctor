@@ -1,0 +1,168 @@
+{
+  "review_scores": {
+    "all": {
+      "root_cause_correct": {
+        "cases": 8,
+        "reviewed": 8,
+        "correct": 8,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 8,
+        "reviewed": 8,
+        "correct": 6,
+        "complete": true,
+        "accuracy_percent": 75.0
+      }
+    },
+    "ai": {
+      "root_cause_correct": {
+        "cases": 8,
+        "reviewed": 8,
+        "correct": 8,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 8,
+        "reviewed": 8,
+        "correct": 6,
+        "complete": true,
+        "accuracy_percent": 75.0
+      }
+    },
+    "family:corrupt-checkpoint": {
+      "root_cause_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:csv-column-missing": {
+      "root_cause_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:empty-optimizer": {
+      "root_cause_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:gradient-disabled": {
+      "root_cause_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:inplace-leaf-update": {
+      "root_cause_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 0,
+        "complete": true,
+        "accuracy_percent": 0.0
+      }
+    },
+    "family:invalid-learning-rate": {
+      "root_cause_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:non-scalar-gradient": {
+      "root_cause_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      }
+    },
+    "family:nonfinite-loss": {
+      "root_cause_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 1,
+        "complete": true,
+        "accuracy_percent": 100.0
+      },
+      "remediation_correct": {
+        "cases": 1,
+        "reviewed": 1,
+        "correct": 0,
+        "complete": true,
+        "accuracy_percent": 0.0
+      }
+    }
+  },
+  "ai_report_coverage_percent": 100.0,
+  "limitations": "Correctness comes from reviewer judgments, not automatic category matches. Incomplete review sets have no accuracy score. Repeated scenario families are correlated; execution count is not independent diagnostic diversity.",
+  "predictions_sha256": "ad787b776f8d46b3c18f29c0bdf08189cb44451ae641989d7f8887efed855b46",
+  "reviews_sha256": "077f6d4098beeeaf885f60b943b142c556471e4df48578a84931478a2779219a"
+}

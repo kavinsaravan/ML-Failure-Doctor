@@ -5,7 +5,6 @@ import (
 	"crashlens/db"
 	"crashlens/fireworks"
 	"crashlens/middleware"
-	"crashlens/runner"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestIndividualKeysIsolateEveryEndpoint(t *testing.T) {
@@ -40,9 +38,7 @@ func TestIndividualKeysIsolateEveryEndpoint(t *testing.T) {
 	aiCalls := 0
 	fw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { aiCalls++; w.WriteHeader(500) }))
 	defer fw.Close()
-	manager := runner.NewManager(d, 1, 2, time.Second)
-	defer manager.Close()
-	h := buildRouter(&api.Server{DB: d, Runner: manager, FWClient: &fireworks.Client{BaseURL: fw.URL, Client: fw.Client()}}, middleware.NewIPRateLimiter(600), "demo")
+	h := buildRouter(&api.Server{DB: d, FWClient: &fireworks.Client{BaseURL: fw.URL, Client: fw.Client()}}, middleware.NewIPRateLimiter(600), "demo")
 	request := func(method, path, token, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		if token != "" {
@@ -105,21 +101,6 @@ func TestIndividualKeysIsolateEveryEndpoint(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &created)
 	if w := request("GET", fmt.Sprintf("/workloads/%d", created.ID), "operator", ""); w.Code != 404 {
 		t.Fatal("forged ownership")
-	}
-	// Queued templates retain the authenticated owner's identity.
-	w = request("POST", "/workloads/run", tokenB, `{"template":"dependency_error"}`)
-	if w.Code != 202 {
-		t.Fatal(w.Body)
-	}
-	var run struct {
-		ID int `json:"workload_id"`
-	}
-	json.Unmarshal(w.Body.Bytes(), &run)
-	if w := request("GET", fmt.Sprintf("/workloads/%d", run.ID), tokenB, ""); w.Code != 200 {
-		t.Fatal("managed ownership lost")
-	}
-	if w := request("GET", fmt.Sprintf("/workloads/%d", run.ID), tokenA, ""); w.Code != 404 {
-		t.Fatal("managed workload leaked")
 	}
 	if w := request("DELETE", "/workloads/clear", tokenB, ""); w.Code != 200 {
 		t.Fatal(w.Body)

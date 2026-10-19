@@ -3,12 +3,10 @@ import json
 import os
 from pathlib import Path
 import secrets
-import select
 import shutil
 import socket
 import subprocess
 import tempfile
-import time
 import urllib.error
 import urllib.request
 
@@ -36,7 +34,6 @@ def main():
             f'CRASHLENS_API_KEY={key}', 'ACCESS_MODE=private', 'APP_ENV=production',
             'FIREWORKS_API_KEY=', f'BACKEND_PORT={api_port}', f'FRONTEND_PORT={frontend_port}',
             f'NEXT_PUBLIC_API_URL={base}', f'ALLOWED_ORIGINS={frontend}',
-            'JOB_CONCURRENCY=1', 'JOB_QUEUE_SIZE=2', 'JOB_TIMEOUT_SECONDS=5',
         ]) + '\n')
         command = [docker, 'compose', '--project-directory', str(ROOT), '--env-file', str(envfile), '-p', project]
         def compose(*args):
@@ -60,104 +57,62 @@ def main():
                 except ValueError:
                     body = raw.decode()
                 return response.status, body
-        def wait_for(predicate, seconds=20):
-            deadline = time.monotonic() + seconds
-            while time.monotonic() < deadline:
-                if predicate():
-                    return
-                time.sleep(.1)
-            raise AssertionError('Timed out waiting for expected state')
         def workload(ident):
             status, body = request(f'/workloads/{ident}')
             assert status == 200, (status, body)
             return body
-        def run(template):
-            status, body = request('/workloads/run', 'POST', {'template': template})
-            assert status == 202, (status, body)
-            return body['workload_id']
         try:
-            print('Building isolated backend, frontend, and MCP images...', flush=True)
-            compose('--profile', 'mcp', 'build')
+            print('Building isolated backend and frontend images...', flush=True)
+            compose('build')
             compose('up', '-d', '--wait')
             assert request('/health', authenticated=False)[0] == 200
             for path in ['/workloads', '/summary', '/workloads/1/logs', '/workloads/1/metrics']:
                 assert request(path, authenticated=False)[0] == 401, path
-            assert request('/workloads/run', 'POST', {'template': 'gpu_oom'}, authenticated=False)[0] == 401
+            assert request('/workloads', 'POST', {'name': 'unauthenticated'}, authenticated=False)[0] == 401
             assert request('/session')[0] == 200
             with urllib.request.urlopen(frontend + '/dashboard', timeout=10) as response:
                 assert response.status == 200
             print('PASS: healthy containers and protected reads/writes', flush=True)
-            first = run('timeout')
-            wait_for(lambda: workload(first)['status'] == 'running')
-            second, third = run('dependency_error'), run('dependency_error')
-            assert request('/workloads/run', 'POST', {'template': 'successful'})[0] == 503
-            assert workload(second)['status'] == 'pending'
-            wait_for(lambda: workload(first)['status'] == 'running' and
-                     workload(first).get('job_logs') and json.loads(workload(first).get('gpu_metrics') or '[]'), 4)
-            print('PASS: live logs/metrics before completion and bounded queue', flush=True)
-            wait_for(lambda: workload(first)['status'] == 'failed')
-            assert workload(first)['failure_type'] == 'TIMEOUT'
-            assert workload(first)['runtime_seconds'] < 9
-            wait_for(lambda: workload(third)['status'] == 'failed')
-            assert workload(second)['failure_type'] == 'DEPENDENCY_ERROR'
+            status, created = request('/workloads', 'POST', {'name': 'SDK smoke test', 'status': 'running'})
+            assert status == 201, (status, created)
+            first = created['id']
+            # Exercise the SDK upload contract; these fixtures are not GPU measurements.
+            logs = 'ModuleNotFoundError: No module named missing_training_package'
+            samples = json.dumps([{
+                'source': 'smoke-test-fixture', 'gpu_memory_used_mb': 128,
+                'gpu_memory_total_mb': 1024, 'gpu_memory_percent': 12.5,
+            }])
+            status, body = request(f'/workloads/{first}', 'PUT', {
+                'job_logs': logs, 'gpu_metrics': samples, 'runtime_seconds': 2,
+            })
+            assert status == 200, (status, body)
+            assert workload(first)['status'] == 'running'
+            assert request(f'/workloads/{first}/logs')[1]['logs'] == logs
+            assert json.loads(request(f'/workloads/{first}/metrics')[1]['metrics']) == json.loads(samples)
+            print('PASS: SDK registration and live telemetry uploads', flush=True)
+            status, body = request(f'/workloads/{first}', 'PUT', {
+                'status': 'failed', 'exit_code': 1, 'runtime_seconds': 3,
+            })
+            assert status == 200 and body['failure_type'] == 'DEPENDENCY_ERROR', (status, body)
             status, report = request(f'/workloads/{first}/diagnose', 'POST')
             assert status == 200 and report['source'] == 'rules', (status, report)
-            print('PASS: execution deadline and persisted diagnosis', flush=True)
-            # The stdio container must work with a real MCP initialization and tool request.
-            stderr = open(Path(temp) / 'mcp.log', 'w+')
-            proc = subprocess.Popen(command + ['run', '--rm', '--no-deps', '-T', 'mcp-server'],
-                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, text=True, bufsize=1)
-            def rpc(ident, method, params):
-                proc.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': ident, 'method': method, 'params': params}) + '\n')
-                proc.stdin.flush()
-                deadline = time.monotonic() + 15
-                while time.monotonic() < deadline:
-                    if not select.select([proc.stdout], [], [], 1)[0]:
-                        continue
-                    line = proc.stdout.readline()
-                    if not line:
-                        raise RuntimeError('MCP container exited before replying')
-                    result = json.loads(line)
-                    if result.get('id') == ident:
-                        assert 'error' not in result, result
-                        return result['result']
-                raise RuntimeError('MCP response timeout')
-            try:
-                rpc(1, 'initialize', {'protocolVersion': '2024-11-05', 'capabilities': {}, 'clientInfo': {'name': 'crashlens-smoke', 'version': '1'}})
-                proc.stdin.write(json.dumps({'jsonrpc': '2.0', 'method': 'notifications/initialized'}) + '\n'); proc.stdin.flush()
-                assert len(rpc(2, 'tools/list', {})['tools']) == 7
-                summary = rpc(3, 'tools/call', {'name': 'get_workload_summary', 'arguments': {'workload_id': first}})
-                assert not summary.get('isError'), summary
-            finally:
-                proc.stdin.close()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.terminate(); proc.wait(timeout=5)
-                stderr.close()
-            print('PASS: MCP container handshake and authenticated tool call', flush=True)
-            # Abrupt restart loses local processes but must not fail an external SDK job.
+            assert workload(first)['failure_report']
+            print('PASS: failure classification and persisted diagnosis', flush=True)
             external_status, external = request('/workloads', 'POST', {'name': 'external SDK', 'status': 'running'})
             assert external_status == 201
-            active = run('timeout')
-            wait_for(lambda: workload(active)['status'] == 'running')
-            pending = run('dependency_error')
             compose('kill', '--signal', 'SIGKILL', 'backend')
             compose('up', '-d', '--wait', 'backend')
-            assert workload(active)['status'] == 'failed'
-            assert workload(pending)['status'] == 'failed'
-            assert 'backend restarted' in workload(active)['job_logs']
             assert workload(external['id'])['status'] == 'running'
             assert workload(first)['failure_report']
             compose('up', '-d', '--force-recreate', '--wait', 'backend')
             assert workload(first)['failure_report']
-            print('PASS: restart recovery, external SDK preservation, and volume persistence', flush=True)
+            print('PASS: external SDK preservation and volume persistence', flush=True)
             assert request('/workloads/clear', 'DELETE', authenticated=False)[0] == 401
             assert request('/workloads/clear', 'DELETE')[0] == 200
             assert request('/workloads')[1] == []
             print('PASS: authenticated clear operation', flush=True)
         finally:
-            compose('--profile', 'mcp', 'down', '--volumes', '--remove-orphans')
+            compose('down', '--volumes', '--remove-orphans')
     print('PASS: isolated Docker validation complete; test containers and volume removed')
 
 if __name__ == '__main__':

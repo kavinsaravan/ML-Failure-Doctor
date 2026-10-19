@@ -6,7 +6,6 @@ import (
 	"crashlens/db"
 	"crashlens/fireworks"
 	"crashlens/middleware"
-	"crashlens/runner"
 	"errors"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -59,7 +58,6 @@ func buildRouter(server *api.Server, limiter *middleware.IPRateLimiter, mode str
 	writes.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
 	expensive := r.NewRoute().Subrouter()
 	expensive.Use(middleware.Authenticate(server.DB, false), limiter.Middleware)
-	expensive.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
 	expensive.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 	keys := r.PathPrefix("/api-keys").Subrouter()
 	keys.Use(middleware.Authenticate(server.DB, false))
@@ -95,12 +93,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer database.Close()
-	if err := database.RecoverManagedJobs("backend restarted before completion"); err != nil {
-		log.Fatal(err)
-	}
-	manager := runner.NewManager(database, positiveEnv("JOB_CONCURRENCY", 2), positiveEnv("JOB_QUEUE_SIZE", 16), time.Duration(positiveEnv("JOB_TIMEOUT_SECONDS", 300))*time.Second)
-	defer manager.Close()
-	server := &api.Server{DB: database, FWClient: fireworks.NewClient(), Runner: manager}
+	server := &api.Server{DB: database, FWClient: fireworks.NewClient()}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	limiter := middleware.NewIPRateLimiter(positiveEnv("JOB_REQUESTS_PER_MINUTE", 60))

@@ -1,0 +1,98 @@
+diff --git a/scripts/collect_gpu_cases.py b/scripts/collect_gpu_cases.py
+index 80cd391..7ebabd2 100644
+--- a/scripts/collect_gpu_cases.py
++++ b/scripts/collect_gpu_cases.py
+@@ -20,20 +20,22 @@ def request(url,key,path,body=None):
+  response=requests.request('GET' if body is None else 'POST',url+path,headers={'Authorization':'Bearer '+key},json=body,timeout=15)
+  response.raise_for_status();return response.json()
+ 
+-def child(case,device,out):
++def child(case,device,out,trial=1):
+  import torch
+  from crashlens import WorkloadTracker
+  if device=='cuda' and not torch.cuda.is_available(): raise RuntimeError('CUDA/ROCm GPU required; CPU fallback refused')
+  if device=='mps' and not torch.backends.mps.is_available(): raise RuntimeError('MPS GPU required; CPU fallback refused')
+  if device=='mps' and os.getenv('PYTORCH_ENABLE_MPS_FALLBACK')=='1': raise RuntimeError('Unset PYTORCH_ENABLE_MPS_FALLBACK')
+  url,key=os.environ['CRASHLENS_URL'],os.environ['CRASHLENS_API_KEY']
+- tracker=WorkloadTracker(url,api_key=key,device=device if device=='mps' else 'cuda:0')
++ tracker=WorkloadTracker(url,api_key=key,device=device if device=='mps' else 'cuda:0',upload_interval=.5)
+  sync=torch.mps.synchronize if device=='mps' else torch.cuda.synchronize
+  ident=None;live=False;trained=False;error=None
+  try:
+-  with tracker.track('Hardware evaluation '+case) as ident:
+-   model=torch.nn.Linear(64,32).to(device)
+-   x=torch.randn(16,64,device=device)
++  with tracker.track(f'Hardware evaluation {case}, trial {trial}') as ident:
++   width,batch=64+trial,16+trial
++   print(f'GPU execution: scenario={case}, trial={trial}, width={width}, batch={batch}',flush=True)
++   model=torch.nn.Linear(width,32).to(device)
++   x=torch.randn(batch,width,device=device)
+    optimizer=torch.optim.SGD(model.parameters(),lr=.01)
+    for _ in range(4):
+     optimizer.zero_grad();loss=model(x).square().mean();loss.backward();optimizer.step();sync()
+@@ -63,11 +65,11 @@ def child(case,device,out):
+     print('Requesting oversized allocation of',requested,'bytes',flush=True)
+     tensor=torch.empty(requested,dtype=torch.uint8,device=device)
+     sync()
+-   elif case=='matmul-shape': torch.matmul(x,torch.randn(65,32,device=device))
++   elif case=='matmul-shape': torch.matmul(x,torch.randn(width+1,32,device=device))
+    elif case=='reshape-size': x.reshape(7,7)
+    elif case=='dtype-or-device':
+     if device=='mps':x.to(torch.float64)
+-    else:x+torch.randn(16,64,device='cpu')
++    else:x+torch.randn(batch,width,device='cpu')
+    elif case=='checkpoint':open('absent_resume_checkpoint.pt','rb')
+    elif case=='dataset':open('absent_training_dataset.csv','rb')
+    elif case=='dependency':__import__('crashlens_benchmark_absent_dependency')
+@@ -81,10 +83,11 @@ def child(case,device,out):
+  label,provenance,cause,fix=SCENARIOS[case]
+  samples=json.loads(stored.get('gpu_metrics') or '[]')
+  name=torch.cuda.get_device_name(0) if device=='cuda' else 'Apple MPS'
+- Path(out).write_text(json.dumps(dict(id=f'{device}-{case}',provenance=provenance,expected_failure_type=label,
++ Path(out).write_text(json.dumps(dict(id=f'{device}-{case}-trial-{trial:03}',scenario_family=case,trial=trial,provenance=provenance,expected_failure_type=label,
+   logs=stored['job_logs'],gpu_metrics=stored.get('gpu_metrics',''),expected_root_cause=cause,acceptable_remediation=fix,
+   hardware=dict(device=device,name=name,torch_version=torch.__version__,gpu_training_verified=trained,live_telemetry_verified=live,
+-   samples=len(samples),workload_id=ident,exception_class=error)),indent=2))
++   samples=len(samples),workload_id=ident,exception_class=error,runtime_seconds=stored.get('runtime_seconds'),
++   created_at=stored.get('created_at'),finished_at=stored.get('finished_at'),input_width=width,batch_size=batch)),indent=2))
+  print('Exported real tracked case:',case)
+ 
+ def main():
+@@ -93,10 +96,13 @@ def main():
+  parser.add_argument('--api-url',default=os.getenv('CRASHLENS_URL'))
+  parser.add_argument('--local-backend',action='store_true',help='Build/run a disposable isolated API; never touches the deployment database')
+  parser.add_argument('--out',type=Path,default=ROOT/'evaluation/hardware-cases.json')
++ parser.add_argument('--repeats',type=int,default=1,help='Executions per scenario; repeated families are not independent diagnostic cases')
++ parser.add_argument('--trial',type=int,default=1,help=argparse.SUPPRESS)
+  parser.add_argument('--child',choices=list(SCENARIOS),help=argparse.SUPPRESS)
+  args=parser.parse_args()
+  args.out=args.out.resolve()
+- if args.child:child(args.child,args.device,args.out);return
++ if args.repeats<1 or args.trial<1:parser.error('repeats and trial must be positive')
++ if args.child:child(args.child,args.device,args.out,args.trial);return
+  if args.out.exists():parser.error('Output exists; choose a new dataset filename')
+  if not args.local_backend and not args.api_url:parser.error('Choose --api-url or --local-backend')
+  with tempfile.TemporaryDirectory(prefix='crashlens-hardware-') as directory:
+@@ -122,13 +128,15 @@ def main():
+     if not key:raise RuntimeError('Set CRASHLENS_API_KEY to a personal workspace key')
+    env.update(CRASHLENS_URL=url,CRASHLENS_API_KEY=key)
+    cases=[]
+-   for case in SCENARIOS:
+-    result=directory/(case+'.json')
+-    subprocess.run([sys.executable,str(Path(__file__).resolve()),'--child',case,'--device',args.device,'--out',str(result)],cwd=directory,env=env,timeout=90,check=True)
+-    cases.append(json.loads(result.read_text()))
+-    # Save every completed case; a failed later test cannot erase collected evidence.
+-    args.out.parent.mkdir(parents=True,exist_ok=True)
+-    args.out.write_text(json.dumps(dict(schema_version=1,description='Controlled failures after verified GPU forward/backward/optimizer computation and live telemetry; GPU allocator/operation errors are distinguished from application failures.',cases=cases),indent=2)+'\n')
++   for trial in range(1,args.repeats+1):
++    for case in SCENARIOS:
++     result=directory/(case+'.json')
++     subprocess.run([sys.executable,str(Path(__file__).resolve()),'--child',case,'--device',args.device,'--trial',str(trial),'--out',str(result)],cwd=directory,env=env,timeout=90,check=True)
++     cases.append(json.loads(result.read_text()))
++     # Checkpoint every execution, including its true provenance and repeated family.
++     args.out.parent.mkdir(parents=True,exist_ok=True)
++     args.out.write_text(json.dumps(dict(schema_version=1,description='Controlled failures after verified GPU forward/backward/optimizer computation and live telemetry. Repeated trials establish execution count, not independent diagnostic diversity.',scenario_families=len(SCENARIOS),repeats=args.repeats,cases=cases),indent=2)+'\n')
++     print(f'Progress: {len(cases)}/{len(SCENARIOS)*args.repeats} real GPU executions',flush=True)
+    print('Collected',len(cases),'actual GPU workload cases to',args.out)
+   finally:
+    if process:

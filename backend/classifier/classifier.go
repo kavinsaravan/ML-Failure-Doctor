@@ -45,9 +45,6 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		strings.Contains(logsLower, "hip error: out of memory") {
 		return ClassificationResult{GPUOutOfMemory, 0.95}
 	}
-	if strings.Contains(logsLower, "mps backend out of memory") || strings.Contains(logsLower, "mps out of memory") {
-		return ClassificationResult{GPUOutOfMemory, 0.95}
-	}
 	// NVIDIA/CUDA specific OOM
 	if strings.Contains(logsLower, "cuda out of memory") ||
 		strings.Contains(logsLower, "cudamalloc failed") ||
@@ -195,32 +192,6 @@ func ExtractEvidenceFromLogs(logs string, maxLines int) []string {
 	}
 
 	return evidence
-}
-
-// ExtractGPUMemoryUsage extracts memory usage from GPU metrics
-func ExtractGPUMemoryUsage(gpuMetrics string) *GPUMemoryInfo {
-	if gpuMetrics == "" {
-		return nil
-	}
-
-	// Parse GPU memory usage from rocm-smi or nvidia-smi output
-	info := &GPUMemoryInfo{}
-
-	// Look for memory patterns like "Memory Used: 15360 MiB / 16384 MiB"
-	memPattern := regexp.MustCompile(`(\d+)\s*(?:MiB|MB|GiB|GB).*?/\s*(\d+)\s*(?:MiB|MB|GiB|GB)`)
-	matches := memPattern.FindStringSubmatch(gpuMetrics)
-
-	if len(matches) >= 3 {
-		info.Used = matches[1]
-		info.Total = matches[2]
-	}
-
-	return info
-}
-
-type GPUMemoryInfo struct {
-	Used  string
-	Total string
 }
 
 // CalculateWastedGPUSeconds calculates GPU time wasted on failed job

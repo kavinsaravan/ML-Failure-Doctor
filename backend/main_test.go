@@ -29,7 +29,7 @@ func TestPrivateAndDemoAccessPolicy(t *testing.T) {
 				t.Fatalf("demo reads blocked: %s", path)
 			}
 		}
-		for _, route := range [][2]string{{"POST", "/workloads"}, {"POST", "/workloads/run"}, {"POST", "/workloads/999/diagnose"}, {"DELETE", "/workloads/clear"}, {"PUT", "/workloads/999"}} {
+		for _, route := range [][2]string{{"POST", "/workloads"}, {"POST", "/workloads/999/diagnose"}, {"DELETE", "/workloads/clear"}, {"PUT", "/workloads/999"}} {
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, httptest.NewRequest(route[0], route[1], nil))
 			if w.Code != 401 {

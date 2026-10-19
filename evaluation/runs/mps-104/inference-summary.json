@@ -1,0 +1,47 @@
+{
+  "code_revision": "a63525093f0945825fa1bc3ec7219496ab8888ae",
+  "dataset_sha256": "37af02955551b194d9426fd2f26bbff8f7d34b716209fc62fed5d233a8bce61a",
+  "requested_model": "auto",
+  "served_models": {
+    "glm-5p3": 104
+  },
+  "total_cases": 104,
+  "stages": [
+    {
+      "stage": "initial_evaluation",
+      "cases": 104,
+      "ai_reports": 37,
+      "rules_fallback_reports": 67,
+      "execution": "Initial sequential checkpoint, then six disjoint parallel shards"
+    },
+    {
+      "stage": "after_credit_topup",
+      "retained_prior_ai_reports": 37,
+      "retried_cases": 67,
+      "ai_reports_on_retry": 65,
+      "remaining_fallback_reports": 2,
+      "execution": "One access-check case, then four disjoint parallel shards"
+    },
+    {
+      "stage": "sequential_recovery",
+      "retried_cases": 2,
+      "successful_ai_reports": 2
+    }
+  ],
+  "diagnostic_access_checks": {
+    "before_topup": "A sequential probe returned HTTP 412 with an account-suspended/billing message; the user confirmed credits were exhausted. Per-case provider errors were not captured for every initial fallback.",
+    "after_topup": "An initial access check still fell back; a diagnostic probe then returned HTTP 200 and an AI report before the resumed evaluation.",
+    "included_as_extra_benchmark_cases": false
+  },
+  "final_ai_reports": 104,
+  "final_ai_coverage_after_recovery_percent": 100,
+  "root_cause_accuracy": "See final/scores.json for model-review judgments; independent human review remains pending.",
+  "review_type": "Model-based project-assistant review; unblinded, not independent human validation",
+  "intermediate_evidence_git_revision": "259a5b51d5d77e405a687689b67af7af0701e466",
+  "intermediate_evidence_original_path": "evaluation/runs/verification-a635250",
+  "limitations": [
+    "Original failed responses and all retries are preserved. Recovery coverage does not measure first-attempt availability.",
+    "104 sequential controlled local MPS runs across eight repeated families; not production concurrency or a general held-out accuracy estimate.",
+    "Only root_cause and recommended_fix fields were scored. Category matches and response coverage are separate measurements."
+  ]
+}

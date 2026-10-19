@@ -1,0 +1,91 @@
+diff --git a/scripts/collect_gpu_cases.py b/scripts/collect_gpu_cases.py
+index 7ebabd2..6a8d13f 100644
+--- a/scripts/collect_gpu_cases.py
++++ b/scripts/collect_gpu_cases.py
+@@ -4,7 +4,7 @@ from pathlib import Path
+ import urllib.request
+ ROOT=Path(__file__).resolve().parents[1]
+ sys.path.insert(0,str(ROOT/'crashlens-sdk'))
+-SCENARIOS={
++ORIGINAL_SCENARIOS={
+  'allocation-256': ('GPU_OUT_OF_MEMORY','executed_gpu_allocator_error','GPU allocation exceeds the configured per-process memory budget.','Reduce allocation or batch size to fit the budget; do not disable safety limits.'),
+  'allocation-384': ('GPU_OUT_OF_MEMORY','executed_gpu_allocator_error','GPU allocation exceeds the configured per-process memory budget.','Reduce allocation or batch size to fit the budget; do not disable safety limits.'),
+  'matmul-shape': ('UNKNOWN_ERROR','executed_gpu_operation_error','GPU tensor matrix multiplication has incompatible inner dimensions.','Correct tensor dimensions before matrix multiplication.'),
+@@ -14,6 +14,17 @@ SCENARIOS={
+  'dataset': ('DATA_PATH_ERROR','executed_application_error_after_gpu_work','Required dataset file does not exist.','Correct the path or provide the dataset.'),
+  'dependency': ('DEPENDENCY_ERROR','executed_application_error_after_gpu_work','A deliberately absent Python package cannot be imported.','Install/provide the required package in the workload environment.'),
+ }
++EXTENDED_SCENARIOS={
++ 'gradient-disabled': ('UNKNOWN_ERROR','executed_gpu_autograd_error','The forward pass ran under torch.no_grad, so its loss has no autograd graph.','Recompute the forward pass with gradient tracking enabled before backward; merely marking the detached loss requires_grad does not reconnect model parameters.'),
++ 'non-scalar-gradient': ('UNKNOWN_ERROR','executed_gpu_autograd_error','Backward was called on a multi-element output without an explicit upstream gradient.','Reduce the output to a scalar loss or supply a correctly shaped upstream gradient.'),
++ 'inplace-leaf-update': ('UNKNOWN_ERROR','executed_gpu_autograd_error','A leaf tensor requiring gradients was modified in place while autograd was enabled.','Use an out-of-place operation, an optimizer update, or no_grad for an intentional non-differentiable parameter initialization/update.'),
++ 'empty-optimizer': ('UNKNOWN_ERROR','executed_application_error_after_gpu_work','A new optimizer was constructed with an empty parameter list.','Pass the intended model parameters to the optimizer; do not remove parameter validation.'),
++ 'invalid-learning-rate': ('UNKNOWN_ERROR','executed_application_error_after_gpu_work','The optimizer was configured with a negative learning rate.','Choose a valid non-negative learning rate; use a positive rate for actual learning.'),
++ 'corrupt-checkpoint': ('UNKNOWN_ERROR','executed_application_error_after_gpu_work','The checkpoint exists but contains deliberately invalid non-PyTorch bytes.','Restore or regenerate a valid checkpoint and validate it; keep safe loading enabled rather than bypassing it for untrusted files.'),
++ 'csv-column-missing': ('UNKNOWN_ERROR','executed_application_error_after_gpu_work','CSV data has feature and label columns, but the code requests an absent target column.','Use the actual label column or explicitly map/validate the required schema; do not silently fabricate labels.'),
++ 'nonfinite-loss': ('UNKNOWN_ERROR','executed_gpu_numerical_error','A zero divided by zero computation produced NaN, caught before an optimizer update.','Prevent zero-denominator division using a mathematically justified guard or stable formulation and validate finite losses; do not suppress the check or blindly continue.'),
++}
++SCENARIOS={**ORIGINAL_SCENARIOS,**EXTENDED_SCENARIOS}
+ 
+ def request(url,key,path,body=None):
+  import requests
+@@ -73,6 +84,26 @@ def child(case,device,out,trial=1):
+    elif case=='checkpoint':open('absent_resume_checkpoint.pt','rb')
+    elif case=='dataset':open('absent_training_dataset.csv','rb')
+    elif case=='dependency':__import__('crashlens_benchmark_absent_dependency')
++   elif case=='gradient-disabled':
++    with torch.no_grad():detached_loss=model(x).sum()
++    print('Loss forward pass ran under torch.no_grad; loss.requires_grad =',detached_loss.requires_grad,flush=True)
++    detached_loss.backward()
++   elif case=='non-scalar-gradient':model(x).backward()
++   elif case=='inplace-leaf-update':next(model.parameters()).add_(1)
++   elif case=='empty-optimizer':torch.optim.Adam([],lr=.001)
++   elif case=='invalid-learning-rate':torch.optim.SGD(model.parameters(),lr=-.01)
++   elif case=='corrupt-checkpoint':
++    Path('corrupt_state.pt').write_bytes(b'not-a-valid-PyTorch-archive')
++    print('Existing checkpoint contains invalid bytes, not a saved PyTorch object',flush=True)
++    torch.load('corrupt_state.pt',map_location='cpu',weights_only=True)
++   elif case=='csv-column-missing':
++    import csv,io
++    row=next(csv.DictReader(io.StringIO('feature,label\n1,0\n')))
++    print('CSV columns:',list(row),'requested column: target',flush=True)
++    row['target']
++   elif case=='nonfinite-loss':
++    zero=torch.tensor(0.,device=device);invalid_loss=zero/zero
++    if not torch.isfinite(invalid_loss).item():raise FloatingPointError('Loss is non-finite (NaN) after 0/0 division; stopped before optimizer update')
+  except Exception as e:error=type(e).__name__
+  if ident is None or not trained or not live:raise RuntimeError('Incomplete hardware execution; case not exported')
+  if error is None:raise RuntimeError('Expected failure did not occur')
+@@ -97,12 +128,14 @@ def main():
+  parser.add_argument('--local-backend',action='store_true',help='Build/run a disposable isolated API; never touches the deployment database')
+  parser.add_argument('--out',type=Path,default=ROOT/'evaluation/hardware-cases.json')
+  parser.add_argument('--repeats',type=int,default=1,help='Executions per scenario; repeated families are not independent diagnostic cases')
++ parser.add_argument('--suite',choices=['original','extended','all'],default='original',help='Original eight families, eight new failure families, or both')
+  parser.add_argument('--trial',type=int,default=1,help=argparse.SUPPRESS)
+  parser.add_argument('--child',choices=list(SCENARIOS),help=argparse.SUPPRESS)
+  args=parser.parse_args()
+  args.out=args.out.resolve()
+  if args.repeats<1 or args.trial<1:parser.error('repeats and trial must be positive')
+  if args.child:child(args.child,args.device,args.out,args.trial);return
++ selected=ORIGINAL_SCENARIOS if args.suite=='original' else EXTENDED_SCENARIOS if args.suite=='extended' else SCENARIOS
+  if args.out.exists():parser.error('Output exists; choose a new dataset filename')
+  if not args.local_backend and not args.api_url:parser.error('Choose --api-url or --local-backend')
+  with tempfile.TemporaryDirectory(prefix='crashlens-hardware-') as directory:
+@@ -129,14 +162,14 @@ def main():
+    env.update(CRASHLENS_URL=url,CRASHLENS_API_KEY=key)
+    cases=[]
+    for trial in range(1,args.repeats+1):
+-    for case in SCENARIOS:
++    for case in selected:
+      result=directory/(case+'.json')
+      subprocess.run([sys.executable,str(Path(__file__).resolve()),'--child',case,'--device',args.device,'--trial',str(trial),'--out',str(result)],cwd=directory,env=env,timeout=90,check=True)
+      cases.append(json.loads(result.read_text()))
+      # Checkpoint every execution, including its true provenance and repeated family.
+      args.out.parent.mkdir(parents=True,exist_ok=True)
+-     args.out.write_text(json.dumps(dict(schema_version=1,description='Controlled failures after verified GPU forward/backward/optimizer computation and live telemetry. Repeated trials establish execution count, not independent diagnostic diversity.',scenario_families=len(SCENARIOS),repeats=args.repeats,cases=cases),indent=2)+'\n')
+-     print(f'Progress: {len(cases)}/{len(SCENARIOS)*args.repeats} real GPU executions',flush=True)
++     args.out.write_text(json.dumps(dict(schema_version=1,description='Controlled failures after verified GPU forward/backward/optimizer computation and live telemetry. Repeated trials establish execution count, not independent diagnostic diversity.',suite=args.suite,scenario_families=len(selected),repeats=args.repeats,cases=cases),indent=2)+'\n')
++     print(f'Progress: {len(cases)}/{len(selected)*args.repeats} real GPU executions',flush=True)
+    print('Collected',len(cases),'actual GPU workload cases to',args.out)
+   finally:
+    if process:

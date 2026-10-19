@@ -28,27 +28,41 @@ func TestValidAIResponseRetainsPrevention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := json.Marshal(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"message": map[string]interface{}{"tool_calls": []interface{}{map[string]interface{}{"function": map[string]string{"name": "diagnose_ml_failure", "arguments": string(args)}}}}}}})
+	body, err := json.Marshal(map[string]interface{}{"model": "served-model", "choices": []interface{}{map[string]interface{}{"message": map[string]interface{}{"tool_calls": []interface{}{map[string]interface{}{"function": map[string]string{"name": "diagnose_ml_failure", "arguments": string(args)}}}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &Client{BaseURL: "https://test.invalid", Client: &http.Client{Transport: responseTransport(func(r *http.Request) (*http.Response, error) {
+	c := &Client{Model: "auto", BaseURL: "https://test.invalid", Client: &http.Client{Transport: responseTransport(func(r *http.Request) (*http.Response, error) {
+		var request Request
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != "auto" {
+			t.Error("auto router was not requested")
+		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(body))), Header: make(http.Header)}, nil
 	})}}
 	result, err := c.DiagnoseFailure("logs")
 	if err != nil || result == nil || result.Prevention != expected.Prevention {
 		t.Fatalf("valid report lost: %+v %v", result, err)
 	}
+	if result.RequestedModel != "auto" || result.ServedModel != "served-model" {
+		t.Fatalf("routing metadata lost: %+v", result)
+	}
 }
 
-func TestOperatorRequiresExplicitModel(t *testing.T) {
+func TestAutoDefaultAndExplicitModelOverride(t *testing.T) {
 	t.Setenv("FIREWORKS_API_KEY", "test-key")
 	t.Setenv("FIREWORKS_MODEL", "")
-	if NewClient() != nil {
-		t.Fatal("operator AI must not use an implicit private deployment")
+	if client := NewClient(); client == nil || client.Model != DefaultModel {
+		t.Fatal("operator AI should use the auto router by default")
 	}
 	t.Setenv("FIREWORKS_MODEL", "accounts/fireworks/models/configured-model")
 	if client := NewClient(); client == nil || client.Model != "accounts/fireworks/models/configured-model" {
 		t.Fatal("explicit model was not used")
+	}
+	if client := NewRequestClient("user-key", "  "); client.Model != DefaultModel {
+		t.Fatal("request-scoped default is not auto")
+	}
+	t.Setenv("FIREWORKS_API_KEY", "")
+	if NewClient() != nil {
+		t.Fatal("auto routing enabled inference without a key")
 	}
 }

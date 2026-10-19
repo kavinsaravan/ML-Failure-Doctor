@@ -2,10 +2,8 @@ package db
 
 import (
 	"crashlens/classifier"
-	"crashlens/metrics"
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -66,16 +64,15 @@ func initSchema(db *sql.DB) error {
 		job_logs TEXT,
 		gpu_metrics TEXT,
 		checkpoint_state TEXT,
-		failure_report TEXT,
-  runner_managed INTEGER NOT NULL DEFAULT 0
+		failure_report TEXT
 	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return err
 	}
 	for _, column := range []struct{ name, definition string }{
-		{"runner_managed", "INTEGER NOT NULL DEFAULT 0"},
 		{"owner_id", "TEXT NOT NULL DEFAULT 'legacy'"},
+		{"client_run_id", "TEXT"},
 	} {
 		var count int
 		if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('workloads') WHERE name = ?", column.name).Scan(&count); err != nil {
@@ -88,6 +85,7 @@ func initSchema(db *sql.DB) error {
 		}
 	}
 	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS workloads_owner ON workloads(owner_id);
+ CREATE UNIQUE INDEX IF NOT EXISTS workloads_client_run ON workloads(owner_id, client_run_id);
  CREATE TABLE IF NOT EXISTS api_keys (
  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, name TEXT NOT NULL,
  key_hash TEXT NOT NULL UNIQUE, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -150,6 +148,32 @@ func (db *DB) CreateWorkload(name, workloadType, status string, owner ...string)
 	return result.LastInsertId()
 }
 
+var ErrClientRunConflict = errors.New("client_run_id already belongs to a different workload")
+
+// Retrying an SDK registration after a lost response must not create another run.
+func (db *DB) CreateClientWorkload(name, kind, status, owner, runID string) (int64, bool, error) {
+	result, err := db.Exec(`INSERT INTO workloads(name,type,status,started_at,owner_id,client_run_id)
+ VALUES(?,?,?,?,?,?) ON CONFLICT(owner_id,client_run_id) DO NOTHING`,
+		name, kind, status, startedAt(status), owner, runID)
+	if err != nil {
+		return 0, false, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, false, err
+	}
+	var id int64
+	var existingName, existingType string
+	err = db.QueryRow("SELECT id,name,type FROM workloads WHERE owner_id=? AND client_run_id=?", owner, runID).Scan(&id, &existingName, &existingType)
+	if err != nil {
+		return 0, false, err
+	}
+	if existingName != name || existingType != kind {
+		return 0, false, ErrClientRunConflict
+	}
+	return id, count == 1, nil
+}
+
 var ErrWorkloadChanged = errors.New("workload changed during update")
 
 func (db *DB) UpdateWorkload(id string, workload *Workload) error {
@@ -185,7 +209,7 @@ func (db *DB) updateWorkload(id string, workload *Workload, expectedStatus *stri
 	return nil
 }
 
-// NormalizeLifecycle applies server-owned metadata to SDK and runner updates.
+// NormalizeLifecycle applies server-owned metadata to workload updates.
 func NormalizeLifecycle(w *Workload) {
 	now := time.Now().UTC()
 	if w.Status == "running" && w.StartedAt == nil {
@@ -262,74 +286,7 @@ func (db *DB) GetStats(owner ...string) (map[string]interface{}, error) {
 		return nil, err
 	}
 	stats["failure_types"] = failureTypes
-	stats["gpu_platform"] = metrics.GetCollector("").Name()
 	return stats, nil
-}
-
-func (db *DB) CreateManagedWorkload(name, kind string, owner ...string) (int64, error) {
-	result, err := db.Exec("INSERT INTO workloads (name,type,status,runner_managed,owner_id) VALUES (?,?,'pending',1,?)", name, kind, creationOwner(owner))
-	if err != nil {
-		return 0, err
-	}
-	return result.LastInsertId()
-}
-func (db *DB) UpdateTelemetry(id int, logs, metrics string, runtime float64) error {
-	_, err := db.Exec("UPDATE workloads SET job_logs=?,gpu_metrics=?,runtime_seconds=? WHERE id=? AND status='running'", logs, metrics, runtime, id)
-	return err
-}
-
-// Only server-managed processes were lost. SDK jobs can keep running on external hosts.
-func (db *DB) RecoverManagedJobs(reason string) error {
-	rows, err := db.Query("SELECT id FROM workloads WHERE runner_managed=1 AND status IN ('pending','running')")
-	if err != nil {
-		return err
-	}
-	var ids []int
-	for rows.Next() {
-		var id int
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	for _, id := range ids {
-		w, err := db.GetWorkload(fmt.Sprint(id))
-		if err != nil {
-			return err
-		}
-		now := time.Now().UTC()
-		runtime := 0.0
-		if w.StartedAt != nil {
-			runtime = now.Sub(*w.StartedAt).Seconds()
-		}
-		logs := ""
-		if w.JobLogs != nil {
-			logs = *w.JobLogs
-		}
-		logs += "\nJob interrupted: " + reason
-		code := 1
-		failure := classifier.UnknownError
-		w.Status = "failed"
-		w.FinishedAt = &now
-		if w.StartedAt != nil {
-			w.RuntimeSeconds = &runtime
-		} else {
-			w.RuntimeSeconds = nil
-		}
-		w.ExitCode = &code
-		w.JobLogs = &logs
-		w.FailureType = &failure
-		if err := db.UpdateWorkload(fmt.Sprint(id), w); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func ownerFilter(owner []string) interface{} {

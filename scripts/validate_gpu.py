@@ -1,4 +1,4 @@
-"""Require real CUDA/ROCm/MPS training and live telemetry; never pass on CPU/simulation."""
+"""Require real CUDA/ROCm training and live telemetry; never pass on CPU/simulation."""
 import argparse
 import json
 import os
@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "crashlens-sdk"))
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-url", default=os.getenv("CRASHLENS_URL", "http://localhost:8080"))
-    parser.add_argument("--device", choices=["auto", "cuda", "mps"], default="auto")
+    parser.add_argument("--device", choices=["auto", "cuda"], default="auto",
+                        help="PyTorch uses cuda for both NVIDIA CUDA and AMD ROCm")
     args = parser.parse_args()
     try:
         import torch
@@ -21,20 +22,15 @@ def main():
         print(f"Hardware validation unavailable: install GPU-compatible PyTorch and the SDK ({error}).", file=sys.stderr)
         return 2
     cuda_available = torch.cuda.is_available()
-    mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-    device = args.device
-    if device == "auto":
-        device = "cuda" if cuda_available else "mps"
-    if not (cuda_available if device == "cuda" else mps_available):
+    device = "cuda"
+    if not cuda_available:
         print(f"Hardware validation unavailable: no {device} GPU. CPU fallback is refused.", file=sys.stderr)
         return 2
-    if device == "mps" and os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1":
-        print("Unset PYTORCH_ENABLE_MPS_FALLBACK for hardware validation.", file=sys.stderr)
-        return 2
-    backend = "MPS" if device == "mps" else ("ROCm" if torch.version.hip else "CUDA")
-    sources = ("torch.mps",) if device == "mps" else ("torch.cuda", "nvidia-ml-py")
-    synchronize = torch.mps.synchronize if device == "mps" else torch.cuda.synchronize
-    tracker = WorkloadTracker(args.api_url, api_key=os.getenv("CRASHLENS_API_KEY"))
+    backend = "ROCm" if torch.version.hip else "CUDA"
+    sources = ("torch.cuda", "nvidia-ml-py")
+    synchronize = torch.cuda.synchronize
+    tracker = WorkloadTracker(args.api_url, api_key=os.getenv("CRASHLENS_API_KEY"),
+                              device="cuda:0")
     observed_live = False
     with tracker.track(f"Real {backend} GPU validation") as ident:
         model = torch.nn.Linear(1024, 512).to(device)

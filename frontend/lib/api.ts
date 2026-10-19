@@ -45,10 +45,11 @@ export interface Stats {
   succeeded_workloads: number;
   wasted_gpu_seconds: number;
   failure_types: { [key: string]: number };
-  gpu_platform?: string;
 }
 
 export interface DiagnosisReport {
+  requested_model?: string;
+  served_model?: string;
   ai_unavailable_reason?: string;
   source: "ai" | "rules";
   confidence_basis?: string;
@@ -63,7 +64,7 @@ export interface DiagnosisReport {
 }
 
 export const api = {
-  setFireworksCredentials(key: string, model: string) { fireworksKey = key.trim(); fireworksModel = model.trim(); },
+  setFireworksCredentials(key: string, model = 'auto') { fireworksKey = key.trim(); fireworksModel = model.trim() || 'auto'; },
   clearFireworksCredentials() { fireworksKey = ''; fireworksModel = ''; },
   hasAPIKey() { return apiKey.length > 0; },
   setAPIKey(key: string) { if (key !== apiKey) { fireworksKey = ''; fireworksModel = ''; } apiKey = key; },
@@ -105,16 +106,6 @@ export const api = {
       headers: getHeaders(),
     });
     await checkResponse(res, 'Failed to fetch stats');
-    return res.json();
-  },
-
-  async runWorkload(template: string, type: string = 'ML_JOB'): Promise<{ workload_id: number }> {
-    const res = await fetch(`${API_URL}/workloads/run`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ type, template }),
-    });
-    await checkResponse(res, 'Failed to run workload');
     return res.json();
   },
 
