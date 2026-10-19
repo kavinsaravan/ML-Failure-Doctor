@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CrashLens - AI Reliability Platform for AMD GPU Workloads",
-  description: "Diagnose failed ML jobs and AI agents in seconds with AI-powered failure analysis",
+  title: "CrashLens - AI-Powered GPU Workload Failure Diagnosis",
+  description: "Diagnose failed GPU workloads in seconds with AI-powered failure analysis for NVIDIA and AMD GPUs",
 };
 
 export default function RootLayout({

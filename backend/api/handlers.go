@@ -146,6 +146,19 @@ func (s *Server) DeleteWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) ClearAllWorkloadsHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := s.DB.Exec("DELETE FROM workloads")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "All workloads cleared successfully",
+	})
+}
+
 func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name       string `json:"name"`

@@ -122,62 +122,24 @@ with tracker.track(f"SageMaker Job - {job_name}"):
 
 Same approach - just add the tracker wrapper!
 
-## Agent Tracking
-
-### Track any AI Agent
-
-```python
-from crashlens.agent_tracker import AgentTracer
-
-tracer = AgentTracer("https://invigorating-empathy-production-dee5.up.railway.app")
-
-# Start tracking
-tracer.start_agent_run("MyAgent", "Complete user task")
-
-# In your agent loop
-for step in agent_steps:
-    if step.type == "tool":
-        tracer.tool_call(step.tool, step.input, step.output)
-    elif step.type == "llm":
-        tracer.model_call(step.prompt, step.response, tokens=step.tokens)
-
-# Finish
-tracer.finish(status="completed")
-```
-
-### Works with:
-- LangChain
-- AutoGPT
-- LlamaIndex
-- Custom agents
-- Any Python agent framework
-
 ## What Gets Tracked?
 
-### For ML Workloads:
 - ✅ Start/end time
 - ✅ Runtime duration
 - ✅ Exit code (success/failure)
 - ✅ Full stdout/stderr logs
 - ✅ Exception tracebacks
-- ✅ Simulated GPU metrics (or real with rocm-smi)
-
-### For AI Agents:
-- ✅ Every tool call
-- ✅ Every LLM call
-- ✅ Token usage
-- ✅ Latency per step
-- ✅ Decision points
-- ✅ Failure detection (loops, errors)
+- ✅ GPU metrics (nvidia-smi/rocm-smi or simulated)
+- ✅ GPU memory usage, utilization, temperature
+- ✅ Failure classification and diagnosis
 
 ## Next Steps
 
-1. **Try the examples**: `cd crashlens-sdk/examples`
-2. **Integrate with your code**: Add 3 lines of code
-3. **Run a job**: Execute your script
-4. **Check dashboard**: View results
-5. **Simulate a failure**: Raise an exception
-6. **Get AI diagnosis**: Click "Run AI Diagnosis"
+1. **Integrate with your code**: Add 3 lines of code
+2. **Run a job**: Execute your script
+3. **Check dashboard**: View results
+4. **Simulate a failure**: Raise an exception
+5. **Get AI diagnosis**: Click "Run AI Diagnosis"
 
 ## Cost Tracking
 

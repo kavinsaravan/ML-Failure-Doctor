@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Zap, Shield, TrendingUp, Bot, Eye, Network } from 'lucide-react';
+import { Zap, Shield, TrendingUp } from 'lucide-react';
 
 export default function Home() {
 
@@ -19,15 +19,13 @@ export default function Home() {
               <span className="text-blue-400 text-sm font-semibold">AI-Powered Reliability Platform</span>
             </div>
             <h1 className="text-6xl md:text-7xl font-bold text-white mb-6 leading-tight">
-              Diagnose failed GPU workloads
-              <br />
-              and AI agents in{' '}
+              Diagnose failed GPU workloads in{' '}
               <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                 seconds
               </span>
             </h1>
             <p className="text-xl text-slate-300 mb-12 leading-relaxed max-w-3xl mx-auto">
-              CrashLens monitors AMD GPU workloads, captures logs and metrics, and uses Gemma to generate root-cause analysis and repair recommendations.
+              CrashLens monitors GPU workloads, captures logs and metrics, and uses AI to generate root-cause analysis and repair recommendations.
             </p>
           </div>
 
@@ -63,10 +61,10 @@ export default function Home() {
                 <Shield className="w-7 h-7 text-white" />
               </div>
               <h3 className="text-xl font-semibold text-white mb-3">
-                AMD ROCm Native
+                Universal GPU Support
               </h3>
               <p className="text-slate-400 leading-relaxed">
-                Built for AMD GPUs with HIP/ROCm error detection and rocm-smi metrics integration.
+                Works with NVIDIA (CUDA) and AMD (ROCm) GPUs with automatic detection and platform-specific error diagnosis.
               </p>
             </div>
 
@@ -79,45 +77,6 @@ export default function Home() {
               </h3>
               <p className="text-slate-400 leading-relaxed">
                 Monitor wasted GPU-seconds on failed jobs and optimize resource usage.
-              </p>
-            </div>
-          </div>
-
-          {/* AI Agent Observability Features */}
-          <div className="grid md:grid-cols-3 gap-8 mt-8 max-w-6xl mx-auto">
-            <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-cyan-500/50 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-cyan-500/10 hover:-translate-y-1">
-              <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                <Bot className="w-7 h-7 text-white" />
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-3">
-                Agent Execution Traces
-              </h3>
-              <p className="text-slate-400 leading-relaxed">
-                Track tool calls, model interactions, and decision paths with detailed execution timelines.
-              </p>
-            </div>
-
-            <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-orange-500/50 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-orange-500/10 hover:-translate-y-1">
-              <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                <Eye className="w-7 h-7 text-white" />
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-3">
-                Failure Detection
-              </h3>
-              <p className="text-slate-400 leading-relaxed">
-                Identify infinite loops, API errors, and reasoning failures with AI-powered diagnostics.
-              </p>
-            </div>
-
-            <div className="group bg-gradient-to-br from-slate-800 to-slate-800/50 border border-slate-700 hover:border-pink-500/50 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-pink-500/10 hover:-translate-y-1">
-              <div className="w-14 h-14 bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                <Network className="w-7 h-7 text-white" />
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-3">
-                Performance Metrics
-              </h3>
-              <p className="text-slate-400 leading-relaxed">
-                Monitor token usage, latency, and model call patterns for cost optimization.
               </p>
             </div>
           </div>

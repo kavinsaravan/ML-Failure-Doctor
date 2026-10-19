@@ -29,6 +29,7 @@ export interface Stats {
   succeeded_workloads: number;
   wasted_gpu_seconds: number;
   failure_types: { [key: string]: number };
+  gpu_platform?: string;
 }
 
 export interface DiagnosisReport {
@@ -83,5 +84,13 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to diagnose workload');
     return res.json();
+  },
+
+  async clearAllWorkloads(): Promise<void> {
+    const res = await fetch(`${API_URL}/workloads/clear`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to clear workloads');
   },
 };
