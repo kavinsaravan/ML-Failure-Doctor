@@ -10,7 +10,13 @@ frontend/build/
 backend/crashlens
 backend/crashlens.db
 crashlens-backend
+crashlens-backend-test
 crashlens.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
 
 # Environment variables
 .env
@@ -38,3 +44,4 @@ npm-debug.log*
 # Private documentation
 GET_STARTED_NOW.md
 docs/AMD_CLOUD_APPLICATION_TEMPLATE.txt
+PROJECT.MD

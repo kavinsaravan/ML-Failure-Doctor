@@ -161,10 +161,9 @@ func (s *Server) ClearAllWorkloadsHandler(w http.ResponseWriter, r *http.Request
 
 func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name       string `json:"name"`
-		ScriptPath string `json:"script_path"`
-		Template   string `json:"template"`
-		Type       string `json:"type"`
+		Name     string `json:"name"`
+		Template string `json:"template"`
+		Type     string `json:"type"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -177,37 +176,24 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 		req.Type = "ML_JOB"
 	}
 
-	// Map template to script path if provided
-	if req.Template != "" && req.ScriptPath == "" {
-		templateMap := map[string]string{
-			"gpu_oom":            "./jobs/gpu_oom.py",
-			"missing_checkpoint": "./jobs/missing_checkpoint.py",
-			"dependency_error":   "./jobs/dependency_error.py",
-			"data_path_error":    "./jobs/data_path_error.py",
-			"timeout":            "./jobs/timeout.py",
-			"successful":         "./jobs/successful_training.py",
-		}
-
-		if path, ok := templateMap[req.Template]; ok {
-			req.ScriptPath = path
-			if req.Name == "" {
-				req.Name = "Test Job: " + req.Template
-			}
-		} else {
-			http.Error(w, "Invalid template name", http.StatusBadRequest)
-			return
-		}
+	// SECURITY: Only allow predefined templates, never accept arbitrary script paths
+	templateMap := map[string]string{
+		"gpu_oom":            "./jobs/gpu_oom.py",
+		"missing_checkpoint": "./jobs/missing_checkpoint.py",
+		"dependency_error":   "./jobs/dependency_error.py",
+		"data_path_error":    "./jobs/data_path_error.py",
+		"timeout":            "./jobs/timeout.py",
+		"successful":         "./jobs/successful_training.py",
 	}
 
-	// Validate script path
-	if req.ScriptPath == "" {
-		http.Error(w, "script_path or template is required", http.StatusBadRequest)
+	scriptPath, ok := templateMap[req.Template]
+	if !ok {
+		http.Error(w, "Invalid template name. Valid templates: gpu_oom, missing_checkpoint, dependency_error, data_path_error, timeout, successful", http.StatusBadRequest)
 		return
 	}
 
-	// Set default name if not provided
 	if req.Name == "" {
-		req.Name = "Workload " + req.Type
+		req.Name = "Test Job: " + req.Template
 	}
 
 	// Create workload entry
@@ -218,7 +204,7 @@ func (s *Server) RunWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run job asynchronously
-	go runner.RunPythonJob(req.ScriptPath, int(id), s.DB)
+	go runner.RunPythonJob(scriptPath, int(id), s.DB)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)

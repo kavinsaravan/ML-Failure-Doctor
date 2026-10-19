@@ -131,7 +131,7 @@ func (c *NVIDIASMICollector) IsAvailable() bool {
 }
 
 func (c *NVIDIASMICollector) Name() string {
-	return "NVIDIA-SMI"
+	return "NVIDIASMI"
 }
 
 func (c *NVIDIASMICollector) Collect() (*GPUMetric, error) {
@@ -228,7 +228,7 @@ func (c *SimulatedCollector) IsAvailable() bool {
 }
 
 func (c *SimulatedCollector) Name() string {
-	return "Simulated GPU"
+	return "Simulated"
 }
 
 func (c *SimulatedCollector) Collect() (*GPUMetric, error) {

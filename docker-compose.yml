@@ -14,7 +14,6 @@ services:
     volumes:
       - crashlens-data:/app/data
       - ./jobs:/jobs
-      - ./agents:/agents
     restart: unless-stopped
     networks:
       - crashlens-network

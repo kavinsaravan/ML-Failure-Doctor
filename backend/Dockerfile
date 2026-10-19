@@ -27,8 +27,8 @@ WORKDIR /root
 # Copy binary from builder
 COPY --from=builder /app/crashlens .
 
-# Copy jobs and agents directories (will be at root level when deployed)
-RUN mkdir -p ./jobs ./agents
+# Create jobs directory for test workloads
+RUN mkdir -p ./jobs
 
 # Expose port
 EXPOSE 8080

@@ -9,6 +9,7 @@ import (
 	"crashlens/api"
 	"crashlens/db"
 	"crashlens/fireworks"
+	"crashlens/middleware"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -39,19 +40,23 @@ func main() {
 	// Setup router
 	r := mux.NewRouter()
 
-	// API routes
+	// Public (read-only) routes
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
-	r.HandleFunc("/workloads", server.CreateWorkloadHandler).Methods("POST")
 	r.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
-	r.HandleFunc("/workloads/clear", server.ClearAllWorkloadsHandler).Methods("DELETE")
 	r.HandleFunc("/workloads/{id}", server.GetWorkloadHandler).Methods("GET")
-	r.HandleFunc("/workloads/{id}", server.UpdateWorkloadHandler).Methods("PUT")
-	r.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
-	r.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
 	r.HandleFunc("/workloads/{id}/logs", server.GetWorkloadLogsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}/metrics", server.GetWorkloadMetricsHandler).Methods("GET")
-	r.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 	r.HandleFunc("/summary", server.GetSummaryHandler).Methods("GET")
+
+	// Protected (write/delete) routes - require API key in production
+	protectedRouter := r.PathPrefix("").Subrouter()
+	protectedRouter.Use(middleware.RequireAPIKey)
+	protectedRouter.HandleFunc("/workloads", server.CreateWorkloadHandler).Methods("POST")
+	protectedRouter.HandleFunc("/workloads/clear", server.ClearAllWorkloadsHandler).Methods("DELETE")
+	protectedRouter.HandleFunc("/workloads/{id}", server.UpdateWorkloadHandler).Methods("PUT")
+	protectedRouter.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
+	protectedRouter.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
+	protectedRouter.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 
 	// CORS - Allow all Vercel preview deployments by using AllowOriginFunc
 	handler := cors.New(cors.Options{
