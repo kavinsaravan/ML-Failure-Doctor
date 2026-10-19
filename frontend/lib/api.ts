@@ -1,5 +1,11 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+// Headers to bypass ngrok browser warning
+const getHeaders = () => ({
+  'ngrok-skip-browser-warning': 'true',
+  'Content-Type': 'application/json',
+});
+
 export interface Workload {
   id: number;
   name: string;
@@ -37,19 +43,25 @@ export interface DiagnosisReport {
 
 export const api = {
   async getWorkloads(): Promise<Workload[]> {
-    const res = await fetch(`${API_URL}/workloads`);
+    const res = await fetch(`${API_URL}/workloads`, {
+      headers: getHeaders(),
+    });
     if (!res.ok) throw new Error('Failed to fetch workloads');
     return res.json();
   },
 
   async getWorkload(id: string): Promise<Workload> {
-    const res = await fetch(`${API_URL}/workloads/${id}`);
+    const res = await fetch(`${API_URL}/workloads/${id}`, {
+      headers: getHeaders(),
+    });
     if (!res.ok) throw new Error('Failed to fetch workload');
     return res.json();
   },
 
   async getStats(): Promise<Stats> {
-    const res = await fetch(`${API_URL}/summary`);
+    const res = await fetch(`${API_URL}/summary`, {
+      headers: getHeaders(),
+    });
     if (!res.ok) throw new Error('Failed to fetch stats');
     return res.json();
   },
@@ -57,7 +69,7 @@ export const api = {
   async runWorkload(template: string, type: string = 'ML_JOB'): Promise<{ workload_id: number }> {
     const res = await fetch(`${API_URL}/workloads/run`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify({ type, template }),
     });
     if (!res.ok) throw new Error('Failed to run workload');
@@ -67,6 +79,7 @@ export const api = {
   async diagnoseWorkload(id: string): Promise<DiagnosisReport> {
     const res = await fetch(`${API_URL}/workloads/${id}/diagnose`, {
       method: 'POST',
+      headers: getHeaders(),
     });
     if (!res.ok) throw new Error('Failed to diagnose workload');
     return res.json();
