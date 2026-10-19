@@ -124,9 +124,10 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 		report.RootCause = "GPU Out of Memory (OOM) - The model or batch size exceeded available GPU memory"
 		report.RecommendedFix = `1. Reduce batch size in training configuration
 2. Enable gradient checkpointing to save memory
-3. Use mixed precision training (FP16)
+3. Use mixed precision training (FP16/BF16)
 4. Consider using a smaller model variant
-5. Increase GPU memory by using larger AMD GPU instances`
+5. Increase GPU memory by using larger GPU instances (A100, H100, MI250X, etc.)
+6. Use gradient accumulation instead of larger batches`
 		report.SafeToRetry = false
 
 	case classifier.MissingCheckpoint:
@@ -141,9 +142,10 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 		report.RootCause = "Python dependency or import error - Required packages are missing or incompatible"
 		report.RecommendedFix = `1. Run 'pip install -r requirements.txt' to install dependencies
 2. Check Python version compatibility
-3. Verify ROCm-compatible PyTorch is installed for AMD GPUs
-4. Check for conflicting package versions
-5. Use 'pip list' to verify installed packages`
+3. For NVIDIA: Install CUDA-compatible PyTorch (pytorch.org)
+4. For AMD: Install ROCm-compatible PyTorch with ROCm index URL
+5. Check for conflicting package versions
+6. Use 'pip list' to verify installed packages`
 		report.SafeToRetry = true
 
 	case classifier.DataPathError:
@@ -161,7 +163,8 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 2. Optimize training loop for faster iterations
 3. Reduce number of training epochs
 4. Profile code to identify bottlenecks
-5. Consider using faster AMD GPU instances`
+5. Consider using faster GPU instances (A100, H100, MI250X)
+6. Check for data loading bottlenecks`
 		report.SafeToRetry = true
 
 	case classifier.ROCmError:
@@ -174,13 +177,23 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 6. Review AMD GPU compatibility matrix`
 		report.SafeToRetry = true
 
+	case classifier.CUDAError:
+		report.RootCause = "NVIDIA CUDA runtime error - CUDA/cuDNN encountered a GPU-related error"
+		report.RecommendedFix = `1. Verify CUDA installation: 'nvidia-smi' command
+2. Check CUDA version compatibility with PyTorch
+3. Update NVIDIA drivers to latest version
+4. Verify GPU is properly detected: 'nvidia-smi -L'
+5. Check cuDNN library compatibility
+6. Review NVIDIA GPU compute capability requirements`
+		report.SafeToRetry = true
+
 	case classifier.GPUDriverError:
 		report.RootCause = "GPU driver version mismatch or driver not available"
-		report.RecommendedFix = `1. Update AMD GPU drivers
-2. Verify ROCm is properly installed
-3. Check driver compatibility with ROCm version
+		report.RecommendedFix = `1. Update GPU drivers (nvidia-smi for NVIDIA, rocm-smi for AMD)
+2. Verify correct GPU runtime is installed (CUDA or ROCm)
+3. Check driver compatibility with framework version
 4. Restart system after driver updates
-5. Verify GPU is accessible: 'rocm-smi' or 'rocminfo'`
+5. Verify GPU is accessible: 'nvidia-smi' or 'rocm-smi'`
 		report.SafeToRetry = true
 
 	default:
@@ -188,9 +201,10 @@ func ruleBasedDiagnosis(failureType string, evidence []string, confidence float6
 		report.RecommendedFix = `1. Review full error logs for specific error messages
 2. Check system resources (CPU, Memory, Disk)
 3. Verify all dependencies are installed
-4. Check for ROCm/AMD GPU compatibility issues
+4. Check GPU compatibility (nvidia-smi or rocm-smi)
 5. Review job configuration for errors
-6. Contact support with full logs if issue persists`
+6. Verify framework installation (PyTorch, TensorFlow, etc.)
+7. Contact support with full logs if issue persists`
 		report.SafeToRetry = false
 	}
 

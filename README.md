@@ -6,28 +6,26 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)
 
-**CrashLens** is an intelligent failure diagnosis and observability platform designed for **AMD GPU workloads**. It combines real-time GPU metrics from `rocm-smi`, AI-powered root cause analysis, and comprehensive observability for both ML training jobs and AI agent executions.
-
-> Built for the [AMD Developer Hackathon Act II](https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-ii) - **Track 3: Unicorn Track**
+**CrashLens** is an intelligent failure diagnosis and observability platform designed for **GPU workloads**. It combines real-time GPU metrics from `rocm-smi`, AI-powered root cause analysis, and comprehensive observability for both ML training jobs and AI agent executions.
 
 ---
 
-## 🎯 Why CrashLens?
+## Why CrashLens?
 
 **The Problem:** ML engineers spend hours debugging GPU failures—deciphering cryptic HIP errors, analyzing memory dumps, and manually correlating logs with metrics.
 
 **The Solution:** CrashLens diagnoses GPU workload failures in **seconds**, not hours:
-- 🤖 **AI-Powered Diagnosis** - Gemma model analyzes logs and provides actionable fixes
-- 📊 **Real-time AMD GPU Metrics** - Native `rocm-smi` integration for memory, utilization, and temperature
-- 🔬 **Agent Observability** - Track tool calls, model interactions, and execution traces
-- 💰 **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
-- 🐳 **Production-Ready** - Fully containerized with Docker
+-  **AI-Powered Diagnosis** - Gemma model analyzes logs and provides actionable fixes
+-  **Real-time AMD GPU Metrics** - Native `rocm-smi` integration for memory, utilization, and temperature
+-  **Agent Observability** - Track tool calls, model interactions, and execution traces
+-  **Cost Tracking** - Monitor wasted GPU-seconds on failed jobs
+-  **Production-Ready** - Fully containerized with Docker
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
-### 🎯 GPU Workload Diagnosis
+###  GPU Workload Diagnosis
 - **Automatic Failure Classification**: GPU OOM, missing checkpoints, dependency errors, data path errors, timeouts, ROCm runtime errors
 - **AI-Powered Doctor**: Gemma-powered diagnosis via Fireworks AI providing:
   - Root cause analysis
@@ -37,13 +35,13 @@
 - **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring via `rocm-smi`
 - **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
 
-### 🤖 AI Agent Observability
+###  AI Agent Observability
 - **Execution Traces**: Visual timeline of tool calls, model calls, and decision points
 - **Performance Metrics**: Track latency, token usage, and model call patterns
 - **Failure Detection**: Identify infinite loops, API errors, and reasoning failures
 - **Unified Dashboard**: Same diagnostic interface for both GPU jobs and agent runs
 
-### 🔧 Model Context Protocol (MCP) Integration
+###  Model Context Protocol (MCP) Integration
 CrashLens exposes diagnostic capabilities through standardized MCP tools:
 - `get_workload_logs` - Retrieve execution logs and error traces
 - `get_gpu_metrics` - Access GPU memory, utilization, temperature data
@@ -56,37 +54,7 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
 
 ---
 
-## 🚀 AMD ROCm Platform Integration
-
-**CrashLens is purpose-built for AMD GPU infrastructure** with deep ROCm ecosystem integration:
-
-### Native AMD Support
-- ✅ **HIP Error Detection** - Recognizes and diagnoses HIP out-of-memory and runtime errors
-- ✅ **rocm-smi Metrics** - Real-time GPU metrics via AMD's `rocm-smi` utility
-- ✅ **ROCm 5.7+ Compatible** - Tested with latest AMD ROCm runtime
-- ✅ **AMD Developer Cloud Ready** - Designed for deployment on AMD infrastructure
-- ✅ **Intelligent Fallback** - Seamless switch between real rocm-smi and simulated metrics for development
-
-### AMD-Specific Features
-```go
-// Automatic AMD GPU detection and metric collection
-if ROCmAvailable() {
-    collector = NewROCmSMICollector()  // Native rocm-smi integration
-} else {
-    collector = NewSimulatedCollector()  // Development fallback
-}
-```
-
-### ROCm Error Patterns Detected
-- `HIP out of memory` errors
-- ROCm runtime failures
-- GPU driver version mismatches
-- AMD GPU utilization bottlenecks
-- Memory bandwidth saturation
-
----
-
-## 🏗️ Architecture
+##  Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -126,69 +94,68 @@ if ROCmAvailable() {
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 ML-Failure-Doctor/
-├── backend/                    # Go Backend Service
-│   ├── main.go                 # Application entry point
-│   ├── api/                    # REST API handlers
-│   │   ├── handlers.go         # Workload & agent endpoints
-│   │   └── server.go           # Server configuration
-│   ├── db/                     # Database layer
-│   │   └── database.go         # SQLite operations
-│   ├── fireworks/              # AI integration
-│   │   └── client.go           # Gemma model client
-│   ├── gpu/                    # GPU metrics collection
-│   │   ├── collector.go        # Metric collector interface
-│   │   ├── rocm.go             # ROCm/rocm-smi integration
-│   │   └── simulator.go        # Simulated metrics for dev
-│   ├── jobs/                   # Job execution engine
-│   │   ├── runner.go           # Job runner
-│   │   └── templates.go        # Test job templates
-│   └── go.mod                  # Go dependencies
+├── backend/                    
+│   ├── main.go                 
+│   ├── api/                    
+│   │   ├── handlers.go         
+│   │   └── server.go           
+│   ├── db/                     
+│   │   └── database.go         
+│   ├── fireworks/              
+│   │   └── client.go           
+│   ├── gpu/                    
+│   │   ├── collector.go        
+│   │   ├── rocm.go             
+│   │   └── simulator.go        
+│   ├── jobs/                   
+│   │   ├── runner.go           
+│   │   └── templates.go        
+│   └── go.mod                  
 │
-├── frontend/                   # Next.js Dashboard
-│   ├── app/                    # App Router pages
-│   │   ├── page.tsx            # Landing page
-│   │   ├── dashboard/          # Main dashboard
-│   │   │   └── page.tsx        # GPU workloads view
-│   │   ├── workloads/[id]/     # Workload details
-│   │   │   └── page.tsx        # Logs, metrics, diagnosis
-│   │   └── agent-runs/         # Agent observability
-│   │       ├── page.tsx        # Agent runs list
-│   │       └── [id]/page.tsx   # Execution trace view
-│   ├── components/             # React components
-│   ├── lib/                    # Utilities
-│   │   └── api.ts              # API client
-│   ├── public/                 # Static assets
-│   ├── package.json            # Node dependencies
-│   └── next.config.ts          # Next.js configuration
+├── frontend/                   
+│   ├── app/                    
+│   │   ├── page.tsx            
+│   │   ├── dashboard/          
+│   │   │   └── page.tsx        
+│   │   ├── workloads/[id]/    
+│   │   │   └── page.tsx        
+│   │   └── agent-runs/         
+│   │       ├── page.tsx       
+│   │       └── [id]/page.tsx   
+│   ├── components/             
+│   ├── lib/                    
+│   │   └── api.ts              
+│   ├── public/                
+│   ├── package.json           
+│   └── next.config.ts          
 │
-├── mcp-server/                 # Model Context Protocol Server
-│   ├── index.js                # MCP server implementation
-│   ├── tools/                  # MCP tool definitions
-│   │   ├── workload_logs.js    # Get workload logs tool
-│   │   ├── gpu_metrics.js      # Get GPU metrics tool
-│   │   └── diagnosis.js        # Get diagnosis tool
-│   └── package.json            # Node dependencies
+├── mcp-server/                 
+│   ├── index.js                
+│   ├── tools/                  
+│   │   ├── workload_logs.js    
+│   │   ├── gpu_metrics.js      
+│   │   └── diagnosis.js        
+│   └── package.json            
+├── notebooks/                  
+│   ├── CrashLens_AMD_GPU_Demo.ipynb  
+│   └── README.md               
 │
-├── notebooks/                  # 🆕 Jupyter Notebooks
-│   ├── CrashLens_AMD_GPU_Demo.ipynb  # AMD GPU testing notebook
-│   └── README.md               # Notebook usage guide
+├── jobs/                       
+│   ├── gpu_oom.py              
+│   ├── dependency_error.py     
+│   ├── missing_checkpoint.py   
+│   └── successful_job.py       
 │
-├── jobs/                       # Job templates (auto-generated)
-│   ├── gpu_oom.py              # GPU OOM test script
-│   ├── dependency_error.py     # Dependency error test
-│   ├── missing_checkpoint.py   # Missing file test
-│   └── successful_job.py       # Successful training test
-│
-├── docker-compose.yml          # Multi-service orchestration
-├── Dockerfile                  # Backend container
-├── frontend/Dockerfile         # Frontend container
-├── .gitignore                  # Git ignore rules
-├── vercel.json                 # Vercel deployment config
-└── README.md                   # This file
+├── docker-compose.yml          
+├── Dockerfile                  
+├── frontend/Dockerfile         
+├── .gitignore                  
+├── vercel.json                 
+└── README.md                   
 ```
 
 ## 🛠️ Tech Stack
@@ -206,11 +173,9 @@ ML-Failure-Doctor/
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
-
-**Choose one of these options:**
 
 #### Option A: Docker (Recommended for Quick Testing)
 - **Docker** and **Docker Compose** installed
@@ -224,7 +189,7 @@ ML-Failure-Doctor/
 
 ---
 
-### Option 1: Docker (Recommended) 🐳
+### Option 1: Docker (Recommended) 
 
 **Step-by-step setup:**
 
@@ -248,10 +213,10 @@ open http://localhost:3000
 ```
 
 **What's Running:**
-- 🎨 **Frontend Dashboard**: http://localhost:3000
-- 🔧 **Backend API**: http://localhost:8080
-- ✅ **Health Check**: http://localhost:8080/health
-- 💾 **Database**: SQLite (auto-created in Docker volume)
+-  **Frontend Dashboard**: http://localhost:3000
+-  **Backend API**: http://localhost:8080
+-  **Health Check**: http://localhost:8080/health
+-  **Database**: SQLite (auto-created in Docker volume)
 
 **To Stop:**
 ```bash
@@ -324,50 +289,6 @@ npm install
 # Start the MCP server
 npm start
 ```
-
----
-
-### 🎬 Create Your First Workload
-
-**Via Dashboard (Easiest Method):**
-
-1. **Open the Dashboard**
-   - Navigate to http://localhost:3000
-   - Click "Get Started" to enter the dashboard
-
-2. **Generate Test Workloads**
-   - Look for the "Quick Test Jobs" section
-   - Click on any test button:
-     - **GPU OOM Test** - Simulates out-of-memory failure
-     - **Dependency Error** - Missing Python package
-     - **Missing Checkpoint** - File not found error
-     - **Successful Job** - Completes without errors
-
-3. **View Results**
-   - The workload appears in the table below
-   - Click "View Details" to see logs and GPU metrics
-   - For failed jobs, click "Run AI Diagnosis" to get AI-powered fixes
-
-**Via API (Advanced):**
-
-Test the backend directly with curl:
-
-```bash
-# Check backend is running
-curl http://localhost:8080/health
-
-# Create a test workload
-curl -X POST http://localhost:8080/workloads/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "template": "gpu_oom",
-    "type": "ML_JOB"
-  }'
-
-# List all workloads
-curl http://localhost:8080/workloads
-```
-
 ---
 
 ## 🔌 API Reference
@@ -426,99 +347,6 @@ curl -X POST http://localhost:8080/workloads/1/diagnose
 curl http://localhost:8080/workloads
 ```
 ---
-
-## 🐳 Docker Configuration
-
-### Multi-Stage Builds
-Optimized for production with minimal image sizes:
-
-- **Backend**: Go binary in Alpine Linux (~15MB)
-- **Frontend**: Next.js standalone output (~100MB)
-- **MCP Server**: Node.js production build (~50MB)
-
-### Services Architecture
-
-| Service | Port | Description | Health Check |
-|---------|------|-------------|--------------|
-| `backend` | 8080 | Go REST API + SQLite | ✅ /health endpoint |
-| `frontend` | 3000 | Next.js production build | Depends on backend |
-| `mcp-server` | - | MCP tool server (stdio) | Depends on backend |
-
-### Volume Persistence
-```yaml
-volumes:
-  crashlens-data:      # SQLite database
-  ./jobs:              # ML job scripts (mounted)
-  ./agents:            # Agent configurations (mounted)
-```
-
-### Environment Variables
-
-Create `.env` file:
-```env
-FIREWORKS_API_KEY=your_fireworks_api_key_here
-PORT=8080
-NODE_ENV=production
-```
-
----
-
-## 🌐 Deployment
-
-### Vercel Deployment (Frontend)
-
-The frontend is deployed on Vercel for easy access:
-
-**Live Demo**: https://frontend-zeta-eight-92.vercel.app
-
-**Deploy Your Own:**
-
-```bash
-# Install Vercel CLI
-npm install -g vercel
-
-# Login to Vercel
-vercel login
-
-# Deploy from the frontend directory
-cd frontend
-vercel --prod
-
-# Set environment variable for backend API
-vercel env add NEXT_PUBLIC_API_URL production
-# Enter your backend URL (e.g., https://your-backend.fly.io or ngrok URL)
-```
-
-### Backend Deployment Options
-
-**Option 1: Railway** (Recommended for Go backends)
-1. Create account at [railway.app](https://railway.app)
-2. Connect your GitHub repository
-3. Add `FIREWORKS_API_KEY` environment variable
-4. Railway auto-detects Go and deploys
-
-**Option 2: Fly.io**
-```bash
-# Install flyctl
-curl -L https://fly.io/install.sh | sh
-
-# Login and deploy
-cd backend
-fly launch
-fly secrets set FIREWORKS_API_KEY=your_key_here
-fly deploy
-```
-
-**Option 3: ngrok (Quick Testing)**
-```bash
-# Start backend locally
-cd backend && go run .
-
-# In another terminal, expose with ngrok
-ngrok http 8080
-
-# Use the ngrok URL (e.g., https://xyz.ngrok-free.dev) as NEXT_PUBLIC_API_URL
-```
 
 ### Environment Variables
 

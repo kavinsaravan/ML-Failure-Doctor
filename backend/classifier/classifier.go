@@ -7,14 +7,15 @@ import (
 
 // FailureType constants
 const (
-	GPUOutOfMemory   = "GPU_OUT_OF_MEMORY"
+	GPUOutOfMemory    = "GPU_OUT_OF_MEMORY"
 	MissingCheckpoint = "MISSING_CHECKPOINT"
-	DependencyError  = "DEPENDENCY_ERROR"
-	DataPathError    = "DATA_PATH_ERROR"
-	Timeout          = "TIMEOUT"
-	ROCmError        = "ROCM_ERROR"
-	GPUDriverError   = "GPU_DRIVER_ERROR"
-	UnknownError     = "UNKNOWN_ERROR"
+	DependencyError   = "DEPENDENCY_ERROR"
+	DataPathError     = "DATA_PATH_ERROR"
+	Timeout           = "TIMEOUT"
+	ROCmError         = "ROCM_ERROR"     // AMD-specific errors
+	CUDAError         = "CUDA_ERROR"     // NVIDIA-specific errors
+	GPUDriverError    = "GPU_DRIVER_ERROR"
+	UnknownError      = "UNKNOWN_ERROR"
 )
 
 // ClassificationResult contains the classification outcome with confidence
@@ -34,15 +35,23 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 	logsLower := strings.ToLower(logs)
 
 	// GPU OOM detection - high confidence patterns
+	// AMD/ROCm specific OOM
 	if strings.Contains(logsLower, "hip out of memory") ||
 		strings.Contains(logsLower, "hip error: out of memory") {
 		return ClassificationResult{GPUOutOfMemory, 0.95}
 	}
+	// NVIDIA/CUDA specific OOM
+	if strings.Contains(logsLower, "cuda out of memory") ||
+		strings.Contains(logsLower, "cudamalloc failed") ||
+		strings.Contains(logsLower, "cuda error: out of memory") {
+		return ClassificationResult{GPUOutOfMemory, 0.95}
+	}
+	// Generic GPU OOM patterns
 	if strings.Contains(logsLower, "out of memory") || strings.Contains(logsLower, "oom") {
 		return ClassificationResult{GPUOutOfMemory, 0.85}
 	}
-	if strings.Contains(logsLower, "cudamalloc failed") ||
-		strings.Contains(logsLower, "rocm out of memory") {
+	if strings.Contains(logsLower, "rocm out of memory") ||
+		strings.Contains(logsLower, "gpu memory allocation failed") {
 		return ClassificationResult{GPUOutOfMemory, 0.90}
 	}
 
@@ -66,8 +75,13 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		strings.Contains(logsLower, "cannot import") {
 		return ClassificationResult{DependencyError, 0.90}
 	}
+	// GPU-specific dependency errors
 	if strings.Contains(logsLower, "rocm version mismatch") ||
 		strings.Contains(logsLower, "rocm-compatible") && strings.Contains(logsLower, "not found") {
+		return ClassificationResult{DependencyError, 0.92}
+	}
+	if strings.Contains(logsLower, "cuda version mismatch") ||
+		strings.Contains(logsLower, "cudnn") && strings.Contains(logsLower, "not found") {
 		return ClassificationResult{DependencyError, 0.92}
 	}
 
@@ -98,18 +112,33 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		return ClassificationResult{Timeout, 0.80}
 	}
 
-	// ROCm/HIP specific errors
+	// ROCm/HIP specific errors (AMD GPUs)
 	if strings.Contains(logsLower, "hip error") ||
 		strings.Contains(logsLower, "rocm error") ||
 		strings.Contains(logsLower, "hsa error") {
 		return ClassificationResult{ROCmError, 0.88}
 	}
 
-	// CUDA compatibility issues (for mixed environments)
+	// CUDA specific errors (NVIDIA GPUs)
+	if strings.Contains(logsLower, "cuda error") ||
+		strings.Contains(logsLower, "cuda runtime error") ||
+		strings.Contains(logsLower, "cudnn error") {
+		return ClassificationResult{CUDAError, 0.88}
+	}
+	if strings.Contains(logsLower, "cublas") && strings.Contains(logsLower, "error") {
+		return ClassificationResult{CUDAError, 0.85}
+	}
+
+	// GPU driver issues (generic)
 	if strings.Contains(logsLower, "cuda") &&
 		(strings.Contains(logsLower, "not available") ||
 		 strings.Contains(logsLower, "driver version")) {
 		return ClassificationResult{GPUDriverError, 0.85}
+	}
+	if strings.Contains(logsLower, "gpu not found") ||
+		strings.Contains(logsLower, "no gpu available") ||
+		strings.Contains(logsLower, "gpu driver") && strings.Contains(logsLower, "error") {
+		return ClassificationResult{GPUDriverError, 0.82}
 	}
 
 	return ClassificationResult{UnknownError, 0.50}
