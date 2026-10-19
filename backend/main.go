@@ -16,6 +16,18 @@ import (
 )
 
 func main() {
+	// Check for API key in production
+	apiKey := os.Getenv("CRASHLENS_API_KEY")
+	railwayEnv := os.Getenv("RAILWAY_ENVIRONMENT")
+
+	if railwayEnv == "production" && apiKey == "" {
+		log.Fatal("CRASHLENS_API_KEY must be set in production (RAILWAY_ENVIRONMENT=production)")
+	}
+
+	if apiKey == "" {
+		log.Println("⚠️  Running without API key - ALL routes are unprotected (development mode)")
+	}
+
 	// Initialize database
 	database, err := db.New("./crashlens.db")
 	if err != nil {
@@ -40,7 +52,11 @@ func main() {
 	// Setup router
 	r := mux.NewRouter()
 
-	// Public (read-only) routes
+	// Rate limiter for public write operations (10 requests per minute per IP)
+	rateLimiter := middleware.NewIPRateLimiter(10)
+	rateLimiter.Cleanup() // Start background cleanup
+
+	// Public routes (read-only + safe operations)
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
 	r.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
 	r.HandleFunc("/workloads/{id}", server.GetWorkloadHandler).Methods("GET")
@@ -48,15 +64,21 @@ func main() {
 	r.HandleFunc("/workloads/{id}/metrics", server.GetWorkloadMetricsHandler).Methods("GET")
 	r.HandleFunc("/summary", server.GetSummaryHandler).Methods("GET")
 
-	// Protected (write/delete) routes - require API key in production
+	// Rate-limited public routes
+	rateLimitedRouter := r.PathPrefix("").Subrouter()
+	rateLimitedRouter.Use(rateLimiter.Middleware)
+	// Only runs whitelisted templates, no RCE risk, but rate limited to prevent spam
+	rateLimitedRouter.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
+	// Calls Fireworks AI, rate limited to prevent credit burning
+	rateLimitedRouter.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
+
+	// Protected routes (write/delete/destructive) - require API key in production
 	protectedRouter := r.PathPrefix("").Subrouter()
 	protectedRouter.Use(middleware.RequireAPIKey)
 	protectedRouter.HandleFunc("/workloads", server.CreateWorkloadHandler).Methods("POST")
 	protectedRouter.HandleFunc("/workloads/clear", server.ClearAllWorkloadsHandler).Methods("DELETE")
 	protectedRouter.HandleFunc("/workloads/{id}", server.UpdateWorkloadHandler).Methods("PUT")
 	protectedRouter.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
-	protectedRouter.HandleFunc("/workloads/run", server.RunWorkloadHandler).Methods("POST")
-	protectedRouter.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 
 	// CORS - Allow all Vercel preview deployments by using AllowOriginFunc
 	handler := cors.New(cors.Options{

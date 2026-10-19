@@ -9,6 +9,12 @@ import sys
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 
+try:
+    from .metrics import GPUMetricsSampler
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+
 
 class WorkloadTracker:
     """
@@ -61,7 +67,8 @@ class WorkloadTracker:
         logs: Optional[str] = None,
         runtime_seconds: Optional[float] = None,
         exit_code: Optional[int] = None,
-        failure_type: Optional[str] = None
+        failure_type: Optional[str] = None,
+        gpu_metrics: Optional[str] = None
     ):
         """Update workload status"""
         data = {"status": status}
@@ -73,6 +80,8 @@ class WorkloadTracker:
             data["exit_code"] = exit_code
         if failure_type:
             data["failure_type"] = failure_type
+        if gpu_metrics:
+            data["gpu_metrics"] = gpu_metrics
 
         requests.put(
             f"{self.api_url}/workloads/{workload_id}",
@@ -84,7 +93,7 @@ class WorkloadTracker:
     def track(self, name: str):
         """
         Context manager for tracking a workload
-        
+
         Example:
             with tracker.track("Training ResNet"):
                 model.train()
@@ -92,56 +101,64 @@ class WorkloadTracker:
         workload_id = self._create_workload(name)
         start_time = time.time()
         logs = []
-        
+
+        # Start GPU metrics collection
+        sampler = None
+        if METRICS_AVAILABLE:
+            sampler = GPUMetricsSampler()
+            sampler.start()
+
         # Capture stdout/stderr
         class LogCapture:
             def __init__(self, original):
                 self.original = original
-                
+
             def write(self, text):
                 logs.append(text)
                 self.original.write(text)
-                
+
             def flush(self):
                 self.original.flush()
-        
+
         old_stdout = sys.stdout
         old_stderr = sys.stderr
         sys.stdout = LogCapture(old_stdout)
         sys.stderr = LogCapture(old_stderr)
-        
+
+        status = "succeeded"
+        exit_code = 0
+
         try:
             yield workload_id
-            
-            # Success
-            runtime = time.time() - start_time
-            self._update_workload(
-                workload_id,
-                status="succeeded",
-                logs="".join(logs),
-                runtime_seconds=runtime,
-                exit_code=0
-            )
-            
+
         except Exception as e:
-            # Failure
-            runtime = time.time() - start_time
+            # Failure - set status but don't update yet
+            status = "failed"
+            exit_code = 1
             error_logs = "".join(logs) + "\n\n" + traceback.format_exc()
-            
-            self._update_workload(
-                workload_id,
-                status="failed",
-                logs=error_logs,
-                runtime_seconds=runtime,
-                exit_code=1
-            )
-            
-            # Re-raise the exception
+            logs = [error_logs]
             raise
-            
+
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
+
+            # Stop GPU metrics collection
+            gpu_metrics = None
+            if sampler:
+                samples = sampler.stop()
+                gpu_metrics = sampler.to_json(samples)
+
+            # Update workload with logs and metrics
+            runtime = time.time() - start_time
+            self._update_workload(
+                workload_id,
+                status=status,
+                logs="".join(logs),
+                runtime_seconds=runtime,
+                exit_code=exit_code,
+                gpu_metrics=gpu_metrics
+            )
     
     def track_function(self, name: str):
         """

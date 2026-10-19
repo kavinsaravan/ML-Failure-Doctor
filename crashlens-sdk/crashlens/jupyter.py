@@ -4,10 +4,17 @@ CrashLens Jupyter Notebook Integration
 Provides IPython magic commands, rich display, and inline visualizations for Jupyter notebooks.
 """
 
+import os
 import time
 import requests
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
+
+try:
+    from .metrics import GPUMetricsSampler
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
 
 # Check if running in Jupyter
 try:
@@ -44,10 +51,14 @@ class JupyterWorkloadTracker:
             model.fit(X_train, y_train, epochs=10)
     """
 
-    def __init__(self, api_url: str):
+    def __init__(self, api_url: str, api_key: Optional[str] = None):
         self.api_url = api_url.rstrip('/')
+        self.api_key = api_key
         self.workload_id: Optional[int] = None
         self.in_jupyter = self._check_jupyter()
+        self.headers = {'Content-Type': 'application/json'}
+        if api_key:
+            self.headers['Authorization'] = f'Bearer {api_key}'
 
     def _check_jupyter(self) -> bool:
         """Check if running in Jupyter environment"""
@@ -67,7 +78,8 @@ class JupyterWorkloadTracker:
                 "name": name,
                 "type": "ML_JOB",
                 "status": "running"
-            }
+            },
+            headers=self.headers
         )
         response.raise_for_status()
         return response.json()["id"]
@@ -75,11 +87,11 @@ class JupyterWorkloadTracker:
     def _update_workload(self, workload_id: int, status: str, **kwargs):
         """Update workload status"""
         data = {"status": status, **kwargs}
-        requests.put(f"{self.api_url}/workloads/{workload_id}", json=data)
+        requests.put(f"{self.api_url}/workloads/{workload_id}", json=data, headers=self.headers)
 
     def _get_workload(self, workload_id: int) -> Dict[str, Any]:
         """Get workload details"""
-        response = requests.get(f"{self.api_url}/workloads/{workload_id}")
+        response = requests.get(f"{self.api_url}/workloads/{workload_id}", headers=self.headers)
         response.raise_for_status()
         return response.json()
 
@@ -89,7 +101,7 @@ class JupyterWorkloadTracker:
             return
 
         try:
-            response = requests.get(f"{self.api_url}/workloads/{workload_id}/metrics")
+            response = requests.get(f"{self.api_url}/workloads/{workload_id}/metrics", headers=self.headers)
             if response.status_code == 200:
                 metrics = response.json()
                 if metrics and isinstance(metrics, list):
@@ -232,6 +244,12 @@ class JupyterWorkloadTracker:
         start_time = time.time()
         logs = []
 
+        # Start GPU metrics collection
+        sampler = None
+        if METRICS_AVAILABLE:
+            sampler = GPUMetricsSampler()
+            sampler.start()
+
         # Capture stdout/stderr
         class LogCapture:
             def __init__(self, original):
@@ -249,6 +267,9 @@ class JupyterWorkloadTracker:
         sys.stdout = LogCapture(old_stdout)
         sys.stderr = LogCapture(old_stderr)
 
+        status = "succeeded"
+        exit_code = 0
+
         try:
             # Show initial progress
             if self.in_jupyter:
@@ -256,53 +277,55 @@ class JupyterWorkloadTracker:
 
             yield workload_id
 
-            # Success
-            runtime = time.time() - start_time
-            self._update_workload(
-                workload_id,
-                status="succeeded",
-                job_logs="".join(logs),
-                runtime_seconds=int(runtime),
-                exit_code=0
-            )
-
-            # Display success
-            self._display_success(name, runtime, workload_id)
-
-            # Optionally display metrics
-            if display_metrics and self.in_jupyter:
-                self._display_metrics(workload_id)
-
         except Exception as e:
-            # Failure
-            runtime = time.time() - start_time
+            # Failure - set status but don't update yet
+            status = "failed"
+            exit_code = 1
             error_logs = "".join(logs) + "\n\n" + traceback.format_exc()
-
-            self._update_workload(
-                workload_id,
-                status="failed",
-                job_logs=error_logs,
-                runtime_seconds=int(runtime),
-                exit_code=1
-            )
+            logs = [error_logs]
 
             # Display failure
+            runtime = time.time() - start_time
             self._display_failure(name, runtime, workload_id, str(e))
 
-            # Auto-diagnose if enabled
-            if auto_diagnose:
-                try:
-                    diagnosis = self.diagnose(workload_id)
-                    self._display_diagnosis(diagnosis)
-                except:
-                    pass
-
-            # Re-raise the exception
             raise
 
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
+
+            # Stop GPU metrics collection
+            gpu_metrics = None
+            if sampler:
+                samples = sampler.stop()
+                gpu_metrics = sampler.to_json(samples)
+
+            # Update workload with logs and metrics
+            runtime = time.time() - start_time
+            self._update_workload(
+                workload_id,
+                status=status,
+                job_logs="".join(logs),
+                runtime_seconds=int(runtime),
+                exit_code=exit_code,
+                gpu_metrics=gpu_metrics
+            )
+
+            # Display success if not failed
+            if status == "succeeded":
+                self._display_success(name, runtime, workload_id)
+
+                # Optionally display metrics
+                if display_metrics and self.in_jupyter:
+                    self._display_metrics(workload_id)
+
+            # Auto-diagnose if enabled and failed (runs after metrics are sent)
+            elif status == "failed" and auto_diagnose:
+                try:
+                    diagnosis = self.diagnose(workload_id, display=False)
+                    self._display_diagnosis(diagnosis)
+                except:
+                    pass
 
     def diagnose(self, workload_id: int, display: bool = True) -> Dict[str, Any]:
         """
@@ -315,7 +338,7 @@ class JupyterWorkloadTracker:
         Returns:
             dict with root_cause, recommended_fixes, evidence, etc.
         """
-        response = requests.post(f"{self.api_url}/workloads/{workload_id}/diagnose")
+        response = requests.post(f"{self.api_url}/workloads/{workload_id}/diagnose", headers=self.headers)
         response.raise_for_status()
         diagnosis = response.json()
 
@@ -401,17 +424,25 @@ if JUPYTER_AVAILABLE:
 
             Usage:
                 %crashlens_init https://your-backend.railway.app
+
+            The API key is read from the CRASHLENS_API_KEY environment variable.
+            Set it before starting Jupyter:
+                export CRASHLENS_API_KEY=your_key
             """
             api_url = line.strip()
             if not api_url:
                 print("❌ Please provide API URL: %crashlens_init https://your-backend.railway.app")
                 return
 
-            self.tracker = JupyterWorkloadTracker(api_url)
+            # Get API key from environment, never from cell source
+            api_key = os.getenv("CRASHLENS_API_KEY")
+
+            self.tracker = JupyterWorkloadTracker(api_url, api_key)
             display(HTML(f"""
             <div style="border: 2px solid #27ae60; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #eafaf1;">
                 <h4 style="color: #27ae60; margin: 0;">✓ CrashLens Initialized</h4>
                 <p style="margin: 10px 0 0 0;">Connected to: <code>{api_url}</code></p>
+                <p style="margin: 10px 0 0 0;">Auth: <code>{'Enabled' if api_key else 'Disabled (set CRASHLENS_API_KEY)'}</code></p>
                 <p style="margin: 10px 0 0 0;">Use <code>%%crashlens_track "Job Name"</code> to track cells</p>
             </div>
             """))

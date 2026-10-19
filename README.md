@@ -35,6 +35,7 @@
   - Prevention strategies
 - **Universal GPU Support**: Auto-detects NVIDIA (nvidia-smi) or AMD (rocm-smi) GPUs
 - **Real-time Metrics**: Live GPU memory, utilization, and temperature monitoring
+  - *Note: Demo jobs use simulated metrics. Workloads tracked with the SDK record live GPU memory (NVIDIA and ROCm), plus utilization and temperature on NVIDIA when `nvidia-ml-py` is installed.*
 - **Cost Intelligence**: Automatic calculation of wasted GPU-seconds and economic impact
 
 ###  Jupyter Notebook Integration
@@ -71,7 +72,7 @@ See [MCP Server Documentation](./mcp-server/README.md) for detailed tool specifi
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
 │            Log + GPU Metric Collector                       │
-│        (nvidia-smi / rocm-smi + Python SDK)                 │
+│   (nvidia-smi / rocm-smi with simulated fallback)           │
 └─────────────────┬───────────────────────────────────────────┘
                   │
                   ▼

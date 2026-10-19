@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+// Compile regex patterns once at package level
+var (
+	oomWordBoundary = regexp.MustCompile(`\boom\b`)
+)
+
 // FailureType constants
 const (
 	GPUOutOfMemory    = "GPU_OUT_OF_MEMORY"
@@ -46,13 +51,14 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		strings.Contains(logsLower, "cuda error: out of memory") {
 		return ClassificationResult{GPUOutOfMemory, 0.95}
 	}
-	// Generic GPU OOM patterns
-	if strings.Contains(logsLower, "out of memory") || strings.Contains(logsLower, "oom") {
-		return ClassificationResult{GPUOutOfMemory, 0.85}
-	}
+	// ROCm-specific OOM (check before generic patterns)
 	if strings.Contains(logsLower, "rocm out of memory") ||
 		strings.Contains(logsLower, "gpu memory allocation failed") {
 		return ClassificationResult{GPUOutOfMemory, 0.90}
+	}
+	// Generic GPU OOM patterns (use word boundaries to avoid false positives like "room")
+	if strings.Contains(logsLower, "out of memory") || oomWordBoundary.MatchString(logsLower) {
+		return ClassificationResult{GPUOutOfMemory, 0.85}
 	}
 
 	// Missing checkpoint detection
@@ -90,7 +96,12 @@ func ClassifyWithConfidence(logs, gpuMetrics string) ClassificationResult {
 		(strings.Contains(logsLower, "not found") || strings.Contains(logsLower, "does not exist")) {
 		return ClassificationResult{DataPathError, 0.90}
 	}
+	// Check for checkpoint file extensions before generic file error
 	if strings.Contains(logsLower, "no such file or directory") {
+		if strings.Contains(logsLower, ".pt") || strings.Contains(logsLower, ".pth") ||
+			strings.Contains(logsLower, ".ckpt") || strings.Contains(logsLower, ".safetensors") {
+			return ClassificationResult{MissingCheckpoint, 0.85}
+		}
 		return ClassificationResult{DataPathError, 0.85}
 	}
 	if (strings.Contains(logsLower, "file") || strings.Contains(logsLower, "path")) &&

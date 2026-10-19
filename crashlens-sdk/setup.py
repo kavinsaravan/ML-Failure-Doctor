@@ -10,6 +10,9 @@ setup(
         "requests>=2.28.0",
     ],
     extras_require={
+        "gpu": [
+            "nvidia-ml-py>=11.0.0",  # For NVIDIA GPU metrics
+        ],
         "jupyter": [
             "ipython>=7.0.0",
             "jupyter>=1.0.0",
@@ -17,6 +20,7 @@ setup(
             "notebook>=6.0.0",
         ],
         "all": [
+            "nvidia-ml-py>=11.0.0",
             "ipython>=7.0.0",
             "jupyter>=1.0.0",
             "pandas>=1.3.0",

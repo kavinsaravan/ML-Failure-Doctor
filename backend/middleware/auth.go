@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"os"
 	"strings"
@@ -33,8 +34,8 @@ func RequireAPIKey(next http.Handler) http.Handler {
 			providedKey = authHeader
 		}
 
-		// Validate API key
-		if providedKey != expectedKey {
+		// Validate API key using constant-time comparison
+		if subtle.ConstantTimeCompare([]byte(providedKey), []byte(expectedKey)) != 1 {
 			http.Error(w, "Invalid API key", http.StatusUnauthorized)
 			return
 		}

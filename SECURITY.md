@@ -5,9 +5,9 @@
 **The CrashLens backend MUST have `CRASHLENS_API_KEY` set in production environments.**
 
 Without this key, anyone can:
-- Execute arbitrary Python code on your server
 - Delete all workloads
 - Create/modify workloads
+- Spam AI diagnosis and burn Fireworks credits
 
 ### Quick Fix (Do This Now!)
 
@@ -22,36 +22,57 @@ Without this key, anyone can:
    - Add: `CRASHLENS_API_KEY=<your_generated_key>`
    - Redeploy
 
-3. **Update your frontend to include the key:**
-   ```typescript
-   // In frontend/lib/api.ts or equivalent
-   const API_KEY = process.env.NEXT_PUBLIC_CRASHLENS_API_KEY;
-
-   fetch(url, {
-     headers: {
-       'Authorization': `Bearer ${API_KEY}`,
-       'Content-Type': 'application/json'
-     }
-   })
+3. **For SDK/Jupyter users, pass the key:**
+   ```python
+   tracker = WorkloadTracker(
+       "https://backend-url",
+       api_key=os.getenv("CRASHLENS_API_KEY")
+   )
    ```
+
+**⚠️ IMPORTANT: Never use `NEXT_PUBLIC_` for the API key!**
+- `NEXT_PUBLIC_` variables are compiled into the client JavaScript bundle
+- Anyone visiting your site can read them in browser devtools
+- For public dashboards, use server-side routes (see below)
 
 ### What's Protected
 
 **With API key set, these routes require authentication:**
-- `POST /workloads` - Create workload
-- `POST /workloads/run` - Run job (CRITICAL - prevents RCE)
-- `PUT /workloads/{id}` - Update workload
-- `DELETE /workloads/{id}` - Delete workload
-- `DELETE /workloads/clear` - Clear all workloads
-- `POST /workloads/{id}/diagnose` - Run diagnosis
+- `POST /workloads` - Create workload (SDK/Jupyter use)
+- `PUT /workloads/{id}` - Update workload (SDK/Jupyter use)
+- `DELETE /workloads/{id}` - Delete workload (destructive)
+- `DELETE /workloads/clear` - Clear all workloads (destructive)
 
-**Public (read-only) routes:**
-- `GET /health`
-- `GET /workloads`
-- `GET /workloads/{id}`
-- `GET /workloads/{id}/logs`
-- `GET /workloads/{id}/metrics`
-- `GET /summary`
+**Public routes (safe for dashboard):**
+- `GET /health` - Health check
+- `GET /workloads` - List workloads (read-only)
+- `GET /workloads/{id}` - Get workload (read-only)
+- `GET /workloads/{id}/logs` - Get logs (read-only)
+- `GET /workloads/{id}/metrics` - Get metrics (read-only)
+- `GET /summary` - Get statistics (read-only)
+- `POST /workloads/run` - Run template job (safe - only whitelisted templates)
+- `POST /workloads/{id}/diagnose` - AI diagnosis (consider rate limiting)
+
+### For Public Dashboards
+
+If you want a public demo where strangers can click buttons:
+
+1. **Keep `run` and `diagnose` public** (they're now safe)
+2. **Add rate limiting** to prevent abuse:
+   ```go
+   // Example: 10 requests per minute per IP
+   ```
+3. **Protect destructive operations** via Next.js server route:
+   ```typescript
+   // app/api/clear/route.ts
+   export async function POST() {
+     const apiKey = process.env.CRASHLENS_API_KEY; // Server-only
+     return fetch(`${backendUrl}/workloads/clear`, {
+       method: 'DELETE',
+       headers: { 'Authorization': `Bearer ${apiKey}` }
+     });
+   }
+   ```
 
 ### Development Mode
 

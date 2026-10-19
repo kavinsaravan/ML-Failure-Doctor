@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"crashlens/classifier"
@@ -63,8 +64,9 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 		return nil, err
 	}
 
-	// Buffer to collect all logs
+	// Buffer to collect all logs (with mutex for thread safety)
 	var logBuffer bytes.Buffer
+	var logMutex sync.Mutex
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -73,28 +75,40 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 
 	// Start metrics collection in background
 	metricsCtx, cancelMetrics := context.WithCancel(ctx)
-	metricsChan := make(chan MetricsSnapshot, 100)
-	go collectMetricsStream(metricsCtx, scriptPath, metricsChan)
+	var allMetrics []MetricsSnapshot
+	var metricsMutex sync.Mutex
+	metricsDone := make(chan struct{})
+	go func() {
+		defer close(metricsDone)
+		collectMetricsToSlice(metricsCtx, scriptPath, &allMetrics, &metricsMutex)
+	}()
+
+	// WaitGroup to ensure all output is read before cmd.Wait()
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// Stream stdout
-	go streamOutput(stdout, &logBuffer, "STDOUT")
+	go func() {
+		defer wg.Done()
+		streamOutput(stdout, &logBuffer, &logMutex, "STDOUT")
+	}()
 
 	// Stream stderr
-	go streamOutput(stderr, &logBuffer, "STDERR")
+	go func() {
+		defer wg.Done()
+		streamOutput(stderr, &logBuffer, &logMutex, "STDERR")
+	}()
 
-	// Wait for command to finish
+	// Wait for all output to be read first
+	wg.Wait()
+
+	// Now it's safe to wait for the command
 	err = cmd.Wait()
 	runtime := time.Since(startTime).Seconds()
 
-	// Stop metrics collection
+	// Stop metrics collection and wait for collector to fully exit
 	cancelMetrics()
-	close(metricsChan)
-
-	// Collect all metrics snapshots
-	var allMetrics []MetricsSnapshot
-	for metric := range metricsChan {
-		allMetrics = append(allMetrics, metric)
-	}
+	<-metricsDone // Collector has fully exited; safe to read allMetrics without lock
 
 	// Format metrics as JSON
 	metricsJSON, _ := json.MarshalIndent(allMetrics, "", "  ")
@@ -153,18 +167,20 @@ func RunPythonJob(scriptPath string, workloadID int, database *db.DB) (*JobResul
 }
 
 // streamOutput reads from a pipe and writes to buffer with optional logging
-func streamOutput(reader io.Reader, buffer *bytes.Buffer, prefix string) {
+func streamOutput(reader io.Reader, buffer *bytes.Buffer, mutex *sync.Mutex, prefix string) {
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
+		mutex.Lock()
 		buffer.WriteString(line + "\n")
+		mutex.Unlock()
 		// Optionally log to console for debugging
 		// log.Printf("[%s] %s", prefix, line)
 	}
 }
 
-// collectMetricsStream periodically collects GPU metrics during job execution
-func collectMetricsStream(ctx context.Context, scriptPath string, metricsChan chan<- MetricsSnapshot) {
+// collectMetricsToSlice periodically collects GPU metrics during job execution
+func collectMetricsToSlice(ctx context.Context, scriptPath string, metrics *[]MetricsSnapshot, mutex *sync.Mutex) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -178,7 +194,9 @@ func collectMetricsStream(ctx context.Context, scriptPath string, metricsChan ch
 			return
 		case <-ticker.C:
 			snapshot := collectGPUMetricsSnapshot(jobType, iteration)
-			metricsChan <- snapshot
+			mutex.Lock()
+			*metrics = append(*metrics, snapshot)
+			mutex.Unlock()
 			iteration++
 		}
 	}
