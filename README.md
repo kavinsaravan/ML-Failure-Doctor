@@ -110,6 +110,14 @@ CrashLens provides first-class support for Jupyter notebooks:
 
 ##  Quick Start
 
+### Use the hosted service
+
+Create a workspace in the dashboard and use its key with
+`WorkloadTracker(api_key="your-workspace-key")`. The SDK and example notebooks
+select the hosted backend automatically. See the [SDK guide](crashlens-sdk/README.md)
+for installation and tracking. Self-hosted users can set `CRASHLENS_URL` or pass
+`api_url=` explicitly; the deployment instructions below are for running your own backend.
+
 ### Prerequisites
 
 #### Option A: Docker (Recommended for Quick Testing)

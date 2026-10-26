@@ -7,6 +7,7 @@ import time
 import traceback
 import sys
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from .outbox import PendingUploads
@@ -25,6 +26,7 @@ except ImportError:
 _tracking_lock = Lock()
 _REQUEST_TIMEOUT = 3
 _FINAL_ATTEMPTS = 3
+DEFAULT_API_URL = "https://ml-failure-doctor-production.up.railway.app"
 
 
 class LogBuffer:
@@ -49,7 +51,6 @@ class WorkloadTracker:
 
     Usage:
         tracker = WorkloadTracker(
-            "https://your-backend.railway.app",
             api_key=os.getenv("CRASHLENS_API_KEY")  # Required in production
         )
 
@@ -65,14 +66,14 @@ class WorkloadTracker:
             pass
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None, upload_interval: float = 2.0, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
+    def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None, upload_interval: float = 2.0, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
         if upload_interval <= 0:
             raise ValueError("upload_interval must be positive")
         self.device = device
         self.fireworks_api_key = fireworks_api_key
         self.fireworks_model = (fireworks_model or "auto").strip() or "auto"
         self.upload_interval = upload_interval
-        self.api_url = api_url.rstrip('/')
+        self.api_url = ((api_url or "").strip() or os.getenv("CRASHLENS_URL", "").strip() or DEFAULT_API_URL).rstrip('/')
         self.api_key = api_key
         self.last_workload_id = None
         self._last_client_run_id = None
@@ -372,7 +373,7 @@ class WorkloadTracker:
 _global_tracker: Optional[WorkloadTracker] = None
 
 
-def init(api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
+def init(api_url: Optional[str] = None, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
     """Initialize global tracker"""
     global _global_tracker
     _global_tracker = WorkloadTracker(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model, device=device, outbox_dir=outbox_dir)

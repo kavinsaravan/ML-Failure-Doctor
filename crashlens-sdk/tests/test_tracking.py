@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from IPython.core.interactiveshell import InteractiveShell
-from crashlens.workload_tracker import WorkloadTracker
+from crashlens.workload_tracker import WorkloadTracker, DEFAULT_API_URL, init
 from crashlens import jupyter
 
 class TrackingTests(unittest.TestCase):
@@ -35,6 +35,33 @@ class TrackingTests(unittest.TestCase):
         self.assertNotIn("X-Fireworks-API-Key", tracker.headers)
         WorkloadTracker("http://test", fireworks_api_key="secret").diagnose(7)
         self.assertEqual(self.post.call_args.kwargs["headers"]["X-Fireworks-Model"], "auto")
+
+    def test_url_selection_routes_uploads_and_workspace_credentials(self):
+        for environment, explicit, expected in [
+            ("", None, DEFAULT_API_URL),
+            ("   ", None, DEFAULT_API_URL),
+            (" https://self-hosted.example/ ", None, "https://self-hosted.example"),
+            ("https://environment.example", " https://explicit.example/ ", "https://explicit.example"),
+        ]:
+            with self.subTest(environment=environment, explicit=explicit), patch.dict('os.environ', {'CRASHLENS_URL': environment}):
+                tracker = WorkloadTracker(explicit, api_key="workspace")
+                with tracker.track("sample"):
+                    pass
+                self.assertEqual(self.post.call_args.args[0], expected + "/workloads")
+                self.assertEqual(self.put.call_args.args[0], expected + "/workloads/7")
+                self.assertEqual(self.post.call_args.kwargs["headers"]["Authorization"], "Bearer workspace")
+
+    def test_global_and_jupyter_initialization_allow_key_without_url(self):
+        with patch.dict('os.environ', {'CRASHLENS_URL': ''}), patch('crashlens.workload_tracker._global_tracker'):
+            self.assertEqual(init(api_key="workspace").api_url, DEFAULT_API_URL)
+            self.assertEqual(jupyter.JupyterWorkloadTracker(api_key="workspace").api_url, DEFAULT_API_URL)
+
+    def test_notebook_magic_initializes_without_url(self):
+        magics = jupyter.CrashLensMagics(shell=InteractiveShell.instance())
+        with patch.dict('os.environ', {'CRASHLENS_URL': '', 'CRASHLENS_API_KEY': 'workspace'}), patch('crashlens.jupyter.display'):
+            magics.crashlens_init('')
+        self.assertEqual(magics.tracker.api_url, DEFAULT_API_URL)
+        self.assertEqual(magics.tracker.headers['Authorization'], 'Bearer workspace')
 
     def test_interruptions_and_exceptions_report_failure(self):
         for error in [KeyboardInterrupt(), SystemExit(2), RuntimeError("broken")]:
