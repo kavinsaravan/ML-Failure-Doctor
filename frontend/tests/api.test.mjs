@@ -2,6 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { api } from '../lib/api.ts';
 
+test('unresponsive reads time out and a later retry can succeed', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalTimeout = AbortSignal.timeout;
+  try {
+    AbortSignal.timeout = () => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), 5);
+      return controller.signal;
+    };
+    globalThis.fetch = async (_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason), {once: true});
+    });
+    await assert.rejects(api.getWorkloads(), /timed out/);
+    globalThis.fetch = async () => new Response('[]', {status: 200});
+    assert.deepEqual(await api.getWorkloads(), []);
+  } finally {
+    globalThis.fetch = originalFetch;
+    AbortSignal.timeout = originalTimeout;
+  }
+});
+
 test('protected operations send the supplied key and expired keys are cleared', async () => {
   const originalFetch=globalThis.fetch;
   const originalWindow=globalThis.window;

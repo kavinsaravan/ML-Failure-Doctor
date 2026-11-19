@@ -1,4 +1,5 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const READ_TIMEOUT_MS = 10_000;
 
 let apiKey = '';
 let fireworksKey = '';
@@ -27,6 +28,8 @@ export interface Workload {
   name: string;
   type: string;
   status: string;
+  last_heartbeat_at?: string;
+  heartbeat_stale?: boolean;
   failure_type?: string;
   created_at: string;
   started_at?: string;
@@ -45,6 +48,29 @@ export interface Stats {
   succeeded_workloads: number;
   wasted_gpu_seconds: number;
   failure_types: { [key: string]: number };
+}
+
+export interface MetricsSnapshot {
+  timestamp: string;
+  gpu_memory_used_mb: number;
+  gpu_memory_total_mb: number;
+  gpu_memory_percent: number;
+  gpu_memory_peak_mb?: number | null;
+  gpu_utilization_percent: number | null;
+  temperature_celsius: number | null;
+  source?: string;
+}
+
+export function getWorkloadStatus(workload: Pick<Workload, 'status' | 'heartbeat_stale'>) {
+  return workload.status === 'running' && workload.heartbeat_stale ? 'stale' : workload.status;
+}
+
+export function getMemoryPeaks(metrics: MetricsSnapshot[]) {
+  const sampledDevice = metrics.length ? metrics.reduce((peak, sample) =>
+    sample.gpu_memory_percent > peak.gpu_memory_percent ? sample : peak) : null;
+  const peaks = metrics.map(sample => sample.gpu_memory_peak_mb).filter(
+    (peak): peak is number => typeof peak === 'number' && Number.isFinite(peak) && peak >= 0);
+  return { sampledDevice, frameworkAllocatedMB: peaks.length ? Math.max(...peaks) : null };
 }
 
 export interface DiagnosisReport {
@@ -66,7 +92,6 @@ export interface DiagnosisReport {
 export const api = {
   setFireworksCredentials(key: string, model = 'auto') { fireworksKey = key.trim(); fireworksModel = model.trim() || 'auto'; },
   clearFireworksCredentials() { fireworksKey = ''; fireworksModel = ''; },
-  hasAPIKey() { return apiKey.length > 0; },
   setAPIKey(key: string) { if (key !== apiKey) { fireworksKey = ''; fireworksModel = ''; } apiKey = key; },
   getAPIURL() { return API_URL; },
   async createWorkspace(name: string): Promise<{ api_key: string; owner_id: string; name: string }> {
@@ -77,17 +102,18 @@ export const api = {
     return res.json();
   },
   async getAccessRequirements(): Promise<{ auth_required: boolean; workspace_creation_enabled?: boolean }> {
-    const res = await fetch(`${API_URL}/health`, { headers: getHeaders(), cache: 'no-store' });
+    const res = await fetch(`${API_URL}/health`, { headers: getHeaders(), cache: 'no-store', signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
     await checkResponse(res, 'Backend unavailable');
     return res.json();
   },
   async checkAccess(key = apiKey): Promise<void> {
-    const res = await fetch(`${API_URL}/session`, { headers: getHeaders(key), cache: 'no-store' });
+    const res = await fetch(`${API_URL}/session`, { headers: getHeaders(key), cache: 'no-store', signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
     if (!res.ok) throw new Error(res.status === 401 ? 'Enter a valid API key.' : 'Backend unavailable');
   },
   async getWorkloads(): Promise<Workload[]> {
     const res = await fetch(`${API_URL}/workloads`, {
       headers: getHeaders(),
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
     });
     await checkResponse(res, 'Failed to fetch workloads');
     return res.json();
@@ -96,6 +122,7 @@ export const api = {
   async getWorkload(id: string): Promise<Workload> {
     const res = await fetch(`${API_URL}/workloads/${id}`, {
       headers: getHeaders(),
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
     });
     await checkResponse(res, 'Failed to fetch workload');
     return res.json();
@@ -104,6 +131,7 @@ export const api = {
   async getStats(): Promise<Stats> {
     const res = await fetch(`${API_URL}/summary`, {
       headers: getHeaders(),
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
     });
     await checkResponse(res, 'Failed to fetch stats');
     return res.json();

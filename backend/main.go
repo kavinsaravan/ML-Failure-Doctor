@@ -4,7 +4,6 @@ import (
 	"context"
 	"crashlens/api"
 	"crashlens/db"
-	"crashlens/fireworks"
 	"crashlens/middleware"
 	"errors"
 	"github.com/gorilla/mux"
@@ -30,7 +29,7 @@ func positiveEnv(name string, fallback int) int {
 	}
 	return n
 }
-func buildRouter(server *api.Server, limiter *middleware.IPRateLimiter, mode string) http.Handler {
+func buildRouter(server *api.Server, limiter *middleware.IPRateLimiter) http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/health", server.HealthHandler).Methods("GET")
 	signupLimiter := server.WorkspaceLimiter
@@ -41,26 +40,26 @@ func buildRouter(server *api.Server, limiter *middleware.IPRateLimiter, mode str
 	signup := middleware.GlobalRateLimit(10, 5)(signupLimiter.Middleware(http.HandlerFunc(server.CreateWorkspaceHandler)))
 	r.Handle("/workspaces", signup).Methods("POST")
 	session := r.PathPrefix("/session").Subrouter()
-	session.Use(middleware.Authenticate(server.DB, false))
+	session.Use(middleware.Authenticate(server.DB))
 	session.HandleFunc("", server.SessionHandler).Methods("GET")
 	reads := r.NewRoute().Subrouter()
-	reads.Use(middleware.Authenticate(server.DB, mode == "demo"))
+	reads.Use(middleware.Authenticate(server.DB))
 	reads.HandleFunc("/workloads", server.GetWorkloadsHandler).Methods("GET")
 	reads.HandleFunc("/workloads/{id}", server.GetWorkloadHandler).Methods("GET")
 	reads.HandleFunc("/workloads/{id}/logs", server.GetWorkloadLogsHandler).Methods("GET")
 	reads.HandleFunc("/workloads/{id}/metrics", server.GetWorkloadMetricsHandler).Methods("GET")
 	reads.HandleFunc("/summary", server.GetSummaryHandler).Methods("GET")
 	writes := r.NewRoute().Subrouter()
-	writes.Use(middleware.Authenticate(server.DB, false))
+	writes.Use(middleware.Authenticate(server.DB))
 	writes.HandleFunc("/workloads", server.CreateWorkloadHandler).Methods("POST")
 	writes.HandleFunc("/workloads/clear", server.ClearAllWorkloadsHandler).Methods("DELETE")
 	writes.HandleFunc("/workloads/{id}", server.UpdateWorkloadHandler).Methods("PUT")
 	writes.HandleFunc("/workloads/{id}", server.DeleteWorkloadHandler).Methods("DELETE")
 	expensive := r.NewRoute().Subrouter()
-	expensive.Use(middleware.Authenticate(server.DB, false), limiter.Middleware)
+	expensive.Use(middleware.Authenticate(server.DB), limiter.Middleware)
 	expensive.HandleFunc("/workloads/{id}/diagnose", server.DiagnoseWorkloadHandler).Methods("POST")
 	keys := r.PathPrefix("/api-keys").Subrouter()
-	keys.Use(middleware.Authenticate(server.DB, false))
+	keys.Use(middleware.Authenticate(server.DB))
 	keys.HandleFunc("", server.IssueKeyHandler).Methods("POST")
 	keys.HandleFunc("", server.ListKeysHandler).Methods("GET")
 	keys.HandleFunc("/{id}", server.RevokeKeyHandler).Methods("DELETE")
@@ -74,16 +73,6 @@ func main() {
 	if (os.Getenv("APP_ENV") == "production" || os.Getenv("RAILWAY_ENVIRONMENT") == "production") && os.Getenv("CRASHLENS_API_KEY") == "" {
 		log.Fatal("CRASHLENS_API_KEY is required in production")
 	}
-	if os.Getenv("CRASHLENS_API_KEY") == "" {
-		log.Println("Development access: no API key configured")
-	}
-	mode := os.Getenv("ACCESS_MODE")
-	if mode == "" {
-		mode = "private"
-	}
-	if mode != "private" && mode != "demo" {
-		log.Fatal("ACCESS_MODE must be private or demo")
-	}
 	path := os.Getenv("DATABASE_PATH")
 	if path == "" {
 		path = "./crashlens.db"
@@ -93,7 +82,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer database.Close()
-	server := &api.Server{DB: database, FWClient: fireworks.NewClient()}
+	server := &api.Server{DB: database}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	limiter := middleware.NewIPRateLimiter(positiveEnv("JOB_REQUESTS_PER_MINUTE", 60))
@@ -111,7 +100,7 @@ func main() {
 	if origins == "" {
 		origins = "http://localhost:3000,http://localhost:3001"
 	}
-	handler := cors.New(cors.Options{AllowedOrigins: strings.Split(origins, ","), AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, AllowedHeaders: []string{"Content-Type", "Authorization", "ngrok-skip-browser-warning", "X-Fireworks-API-Key", "X-Fireworks-Model"}}).Handler(buildRouter(server, limiter, mode))
+	handler := cors.New(cors.Options{AllowedOrigins: strings.Split(origins, ","), AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, AllowedHeaders: []string{"Content-Type", "Authorization", "ngrok-skip-browser-warning", "X-Fireworks-API-Key", "X-Fireworks-Model"}}).Handler(buildRouter(server, limiter))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -123,7 +112,7 @@ func main() {
 		defer cancel()
 		httpServer.Shutdown(shutdown)
 	}()
-	log.Printf("CrashLens backend on port %s (%s access)", port, mode)
+	log.Printf("CrashLens backend on port %s (workspace key required)", port)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}

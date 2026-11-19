@@ -11,7 +11,6 @@ the backend. Native `go run .` does not automatically load a `.env` file.
 ```env
 CRASHLENS_API_KEY=your_secure_operator_key  # Keep private
 APP_ENV=production
-ACCESS_MODE=private
 DATABASE_PATH=/var/lib/crashlens/crashlens.db  # Must persist across restarts
 PORT=8080
 ALLOWED_ORIGINS=https://crashlens.example.com  # No trailing slash
@@ -27,15 +26,58 @@ backend’s service user. The database directory must persist across restarts an
 redeployments.
 
 **Docker:**
+
+Requires Docker and Docker Compose. From a terminal:
+
 ```bash
-cp .env.example .env  # Edit with your values
+git clone https://github.com/kavinsaravan/ML-Failure-Doctor.git
+cd ML-Failure-Doctor
+cp .env.example .env  # Configure your operator key and deployment settings.
 docker compose up --build -d
+docker compose logs -f
 ```
+
+Open `http://localhost:3000` for the dashboard. The API listens on
+`http://localhost:8080`; its public health check is `/health`.
+Use `docker compose down` to stop the stack or `docker compose restart` to restart it.
 
 Compose fixes `DATABASE_PATH` at `/app/data/crashlens.db` and mounts the
 `crashlens-data` named volume at `/app/data`. The native path above does not apply
 to Compose. Changing `DATABASE_PATH` in the root `.env` does not override this
 Compose setting.
+
+## Local Development
+
+Requires Go 1.26+, Node.js 20.9+, and a C compiler with CGO enabled for SQLite
+(Xcode Command Line Tools on macOS or GCC/build tools on Linux). Python and any
+GPU-compatible PyTorch installation belong on the machine running your workloads.
+
+From the repository root, start the backend:
+
+```bash
+cd backend
+go mod download
+export CRASHLENS_API_KEY="your_secure_operator_key"
+go run .
+```
+
+In another terminal, start the frontend:
+
+```bash
+cd frontend
+npm ci
+# For a remote API, set NEXT_PUBLIC_API_URL in frontend/.env.local first.
+npm run dev
+```
+
+Open `http://localhost:3000`, create a workspace, and save its key. For SDK runs
+against this local API, set `CRASHLENS_URL=http://localhost:8080` or pass that URL
+as `api_url=`. Colab needs a backend URL it can reach; its `localhost` is separate
+from your development machine.
+
+`NEXT_PUBLIC_API_URL` is embedded at build time. Rebuild the frontend after changing
+it for a deployed or Docker stack. It must be reachable from the user's browser;
+use the public backend URL, not Docker's internal `http://backend:8080` hostname.
 
 ## Critical Requirements
 
@@ -51,16 +93,18 @@ Compose setting.
 - Receive a key once (no recovery)
 - Disable with `ALLOW_WORKSPACE_CREATION=false`
 
-### Operator Key Management
+### Operator Key Revocation
+
+Users obtain keys through workspace signup. To revoke a key, use the existing
+operator-only API directly; a separate CLI is not required. Set `CRASHLENS_URL`
+to your backend and `CRASHLENS_API_KEY` to the operator key in your shell:
 
 ```bash
-python scripts/manage_keys.py --api-url https://YOUR-BACKEND issue Alice
-python scripts/manage_keys.py --api-url https://YOUR-BACKEND list
-python scripts/manage_keys.py --api-url https://YOUR-BACKEND revoke KEY_ID
+# Find the key ID (this lists metadata, never the saved secrets).
+curl --fail -H "Authorization: Bearer $CRASHLENS_API_KEY" "$CRASHLENS_URL/api-keys"
 
-# Rotate key (preserve workloads)
-python scripts/manage_keys.py --api-url https://YOUR-BACKEND issue Alice --owner-id OWNER_ID
-python scripts/manage_keys.py --api-url https://YOUR-BACKEND revoke OLD_KEY_ID
+# Revoke that key immediately.
+curl --fail -X DELETE -H "Authorization: Bearer $CRASHLENS_API_KEY" "$CRASHLENS_URL/api-keys/KEY_ID"
 ```
 
 **Security:**
@@ -70,16 +114,13 @@ python scripts/manage_keys.py --api-url https://YOUR-BACKEND revoke OLD_KEY_ID
 
 ## AI Diagnosis
 
-**User credentials (recommended):**
-- Users provide their own Fireworks key in the dashboard or SDK; the model defaults to the `auto` serverless router
-- Credentials sent per-request, never stored
-
-**Operator credentials (legacy workspace only):**
-```env
-FIREWORKS_API_KEY=your_key
-FIREWORKS_MODEL=auto  # Optional override; auto is the default
-# Key required; only works for operator workspace
-```
+Users provide their own Fireworks key in the dashboard or SDK. Diagnosis defaults
+to the `auto` serverless router; an explicit tool-capable model can override it.
+Keys are sent per request and are not stored. Without a request key, the backend
+returns a rule-based diagnosis. This also applies to operator requests: backend
+`FIREWORKS_API_KEY` and `FIREWORKS_MODEL` variables do not fund API diagnoses.
+The separate offline evaluator may still read these variables for explicitly
+requested paid benchmark runs.
 
 ## Security
 
@@ -114,4 +155,4 @@ python scripts/validate_gpu.py --device cuda  # NVIDIA CUDA or AMD ROCm PyTorch 
 
 **Keys not persisting**: Check `DATABASE_PATH` volume mount and permissions
 
-**AI diagnosis fails**: Verify `FIREWORKS_API_KEY` is set (operator), or the user supplied a valid Fireworks key. Model selection defaults to `auto`; explicit overrides must support tool calling
+**AI diagnosis fails**: Verify the user supplied a valid Fireworks key in the dashboard or SDK. Model selection defaults to `auto`; explicit overrides must support tool calling.

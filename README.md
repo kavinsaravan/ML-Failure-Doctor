@@ -6,7 +6,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)
 
-**CrashLens** is an intelligent failure diagnosis platform designed for GPU workloads. It combines real-time GPU metrics collection (nvidia-smi/rocm-smi/), AI-powered root cause analysis, and comprehensive observability for ML training jobs across all GPU platforms.
+**CrashLens** is an intelligent failure diagnosis platform designed for GPU workloads. It combines real-time GPU metrics collection (nvidia-smi/rocm-smi/), AI-powered root cause analysis, and comprehensive observability for ML training jobs across GPU platforms.
 
 ---
 
@@ -48,7 +48,7 @@ CrashLens provides first-class support for Jupyter notebooks:
 
 ### Backend Diagnosis
 
-`POST /workloads/{id}/diagnose` analyzes a failed workload. Ordinary users supply their own Fireworks key through the dashboard, SDK, or request headers. Diagnosis defaults to Fireworks’ `auto` serverless router; an explicit tool-capable model can override it. Operator requests may use backend `FIREWORKS_API_KEY` and optional `FIREWORKS_MODEL`. A saved AI report is returned without another inference call unless `?refresh=true` is supplied.
+`POST /workloads/{id}/diagnose` analyzes a failed workload. Ordinary users supply their own Fireworks key through the dashboard, SDK, or request headers. Diagnosis defaults to Fireworks’ `auto` serverless router; an explicit tool-capable model can override it. All API diagnoses use the Fireworks key supplied with the request; backend environment variables do not fund diagnoses. Without a key, the backend returns a rule-based report. A saved AI report is returned without another inference call unless `?refresh=true` is supplied.
 
 ---
 
@@ -110,151 +110,42 @@ CrashLens provides first-class support for Jupyter notebooks:
 
 ##  Quick Start
 
-### Prerequisites
+### Try the hosted service
 
-#### Option A: Docker (Recommended for Quick Testing)
-- **Docker** and **Docker Compose** installed
-- **Fireworks credentials** (optional): Your API key for AI-assisted diagnosis using automatic serverless model selection. Rule-based diagnosis requires no Fireworks credentials.
+1. Open your CrashLens dashboard, enter a workspace name, and click **Create my workspace**. Copy and save the generated key; it is shown only once.
+2. Open the [sample notebook in Colab](https://colab.research.google.com/github/kavinsaravan/ML-Failure-Doctor/blob/main/sample%20notebook/CrashLens_E2E_Test.ipynb), select a GPU runtime, and run the cells in order. Enter your workspace key when prompted; the hosted backend is selected automatically.
+3. Keep the dashboard open with the same workspace key to see the notebook's training run and intentional failures.
+4. To generate an AI diagnosis, add your Fireworks key in the dashboard, leave the model as `auto`, and click **Use my Fireworks account**. Open a failed workload and select **Run Diagnosis**. Without a Fireworks key, diagnosis uses rules.
 
-#### Option B: Local Development
-- **Go** 1.26+ ([Download](https://go.dev/dl/))
-- **Node.js** 20.9+ ([Download](https://nodejs.org/))
-- **Fireworks credentials** (optional): Your API key for AI-assisted diagnosis using automatic serverless model selection. Rule-based diagnosis requires no Fireworks credentials.
-- **Python 3** and the SDK on the machine running your workloads
-- **C compiler** with CGO enabled for the Go SQLite dependency (Xcode Command Line Tools on macOS, or GCC/build tools on Linux)
-- **GPU runtime** (optional): CUDA or ROCm with a compatible PyTorch installation, installed on the machine running your workloads
+### Track your own workload
 
----
-
-### Option 1: Docker (Recommended) 
-
-**Step-by-step setup:**
+Install the SDK on the machine running your code:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/kavinsaravan/ML-Failure-Doctor.git
-cd ML-Failure-Doctor
-
-# 2. Create an environment file
-cp .env.example .env
-# Optional: set FIREWORKS_API_KEY for operator AI diagnosis; model defaults to auto
-# Workspace users supply their own Fireworks credentials in the dashboard or SDK
-
-# 3. Start all services (backend, frontend, database)
-docker compose up --build -d
-
-# 4. Wait for services to start (about 30 seconds)
-# Check logs to verify everything is running:
-docker compose logs -f
-
-# 5. Access the application
-open http://localhost:3000
+python -m pip install "crashlens[gpu] @ git+https://github.com/kavinsaravan/ML-Failure-Doctor.git#subdirectory=crashlens-sdk"
 ```
 
-**What's Running:**
--  **Frontend Dashboard**: http://localhost:3000
--  **Backend API**: http://localhost:8080
--  **Health Check**: http://localhost:8080/health
--  **Database**: SQLite (auto-created in Docker volume)
+This minimal example sends logs and run status to your workspace. Run your
+training code inside the block to collect available GPU telemetry:
 
-The backend Docker image stores and diagnoses telemetry uploaded by SDK workloads running on your training machine.
-SQLite is stored in the named `crashlens-data` volume, which survives container
-recreation and `docker compose down`. Use `docker compose down -v` to delete
-stored workloads.
+```python
+from getpass import getpass
+from crashlens import WorkloadTracker
 
-`NEXT_PUBLIC_API_URL` must be reachable from the browser. For a remote host, set it
-to that host's backend URL in `.env` and rebuild with `docker compose up --build -d`.
-The default is `http://localhost:8080`.
-
-**To Stop:**
-```bash
-docker compose down
+tracker = WorkloadTracker(api_key=getpass("CrashLens workspace key: "))
+with tracker.track("My workload"):
+    print("CrashLens is tracking this run.")
+    # Run your training code here.
 ```
 
-**To Restart:**
-```bash
-docker compose restart
-```
+See the [SDK guide](crashlens-sdk/README.md) for GPU dependencies, device selection,
+notebook integration, and tracking options.
 
----
+### Self-hosting and local development
 
-### Option 2: Local Development (For Developers)
-
-**Step 1: Backend Setup**
-
-```bash
-# Navigate to backend directory
-cd backend
-
-# Download Go dependencies
-go mod download
-
-# Optional: operator-only AI diagnosis
-export FIREWORKS_API_KEY="your_fireworks_api_key_here"
-export FIREWORKS_MODEL="auto"  # Optional; a specific tool-capable model can override this
-
-# Configure an operator key for key management; required in production
-export CRASHLENS_API_KEY="your_secure_operator_key"
-# Users create separate workspace keys through the dashboard
-
-# Start the backend server (runs on port 8080)
-go run .
-
-# You should see: "CrashLens backend on port 8080 (private access)"
-```
-
-**Keep this terminal open and running.**
-
----
-
-**Step 2: Frontend Setup**
-
-Open a **new terminal window** and run:
-
-```bash
-# Navigate to frontend directory (from project root)
-cd frontend
-
-# Install Node.js dependencies
-npm install
-
-# Start the development server (runs on port 3000)
-npm run dev
-
-# You should see: "Ready on http://localhost:3000"
-```
-
-**Keep this terminal open and running.**
-
----
-
-## Environment Variables
-
-**Frontend** (`frontend/.env.local`):
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8080  # Local development
-# OR
-NEXT_PUBLIC_API_URL=https://your-backend-url.com  # Production
-```
-
-**Backend** (set in the shell or your deployment; Compose reads the root `.env`):
-```env
-# Operator credential: required in production, never distribute it to users
-CRASHLENS_API_KEY=your_secure_operator_key
-
-# Optional operator AI diagnosis; model selection defaults to auto
-FIREWORKS_API_KEY=
-FIREWORKS_MODEL=auto
-
-PORT=8080
-DATABASE_PATH=./crashlens.db
-ACCESS_MODE=private
-APP_ENV=development
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
-ALLOW_WORKSPACE_CREATION=true
-TRUSTED_PROXY_CIDRS=
-```
-
+See the [deployment guide](PRODUCTION_SETUP.md) for Docker setup, local Go/Next.js
+development, environment variables, and database persistence. When using your
+own backend, set `CRASHLENS_URL` or pass `api_url=` to the SDK.
 
 ---
 
@@ -262,12 +153,12 @@ TRUSTED_PROXY_CIDRS=
 
 CrashLens supports private workspaces with API key-based isolation. Each key identifies an owner, and the API restricts all operations (list, view, update, delete, diagnose) to that owner's workloads.
 
-For operator key issuance, revocation, rotation, and security guidance, see
-[Operator Key Management](./PRODUCTION_SETUP.md#operator-key-management).
+For operator key listing, revocation, and security guidance, see
+[Operator Key Revocation](PRODUCTION_SETUP.md#operator-key-revocation).
 
 ### Bring Your Own AI Key (BYOK)
 
-Users can provide their own Fireworks credentials for AI-powered diagnosis instead of using shared credits.
+Users provide their own Fireworks credentials for AI-powered diagnosis.
 
 **Dashboard setup:**
 1. Connect with your CrashLens API key

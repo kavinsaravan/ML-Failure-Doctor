@@ -21,7 +21,7 @@ func RequestIdentity(r *http.Request) Identity {
 	}
 	return Identity{Owner: "legacy"}
 }
-func Authenticate(database *db.DB, publicDemo bool) func(http.Handler) http.Handler {
+func Authenticate(database *db.DB) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
@@ -37,16 +37,8 @@ func Authenticate(database *db.DB, publicDemo bool) func(http.Handler) http.Hand
 				}
 				identity.Owner = owner
 			} else {
-				hasKeys, err := database.HasAPIKeys()
-				if err != nil {
-					http.Error(w, "Authentication unavailable", 503)
-					return
-				}
-				production := os.Getenv("APP_ENV") == "production" || os.Getenv("RAILWAY_ENVIRONMENT") == "production"
-				if hasKeys || ((expected != "" || production) && !publicDemo) {
-					http.Error(w, "API key required", 401)
-					return
-				}
+				http.Error(w, "API key required", http.StatusUnauthorized)
+				return
 			}
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, identity)))
 		})

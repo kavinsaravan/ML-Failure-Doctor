@@ -7,6 +7,7 @@ import time
 import traceback
 import sys
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from .outbox import PendingUploads
@@ -25,6 +26,8 @@ except ImportError:
 _tracking_lock = Lock()
 _REQUEST_TIMEOUT = 3
 _FINAL_ATTEMPTS = 3
+_HEARTBEAT_INTERVAL = 30.0
+DEFAULT_API_URL = "https://ml-failure-doctor-production.up.railway.app"
 
 
 class LogBuffer:
@@ -49,7 +52,6 @@ class WorkloadTracker:
 
     Usage:
         tracker = WorkloadTracker(
-            "https://your-backend.railway.app",
             api_key=os.getenv("CRASHLENS_API_KEY")  # Required in production
         )
 
@@ -65,14 +67,14 @@ class WorkloadTracker:
             pass
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None, upload_interval: float = 2.0, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
+    def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None, upload_interval: float = 2.0, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
         if upload_interval <= 0:
             raise ValueError("upload_interval must be positive")
         self.device = device
         self.fireworks_api_key = fireworks_api_key
         self.fireworks_model = (fireworks_model or "auto").strip() or "auto"
         self.upload_interval = upload_interval
-        self.api_url = api_url.rstrip('/')
+        self.api_url = ((api_url or "").strip() or os.getenv("CRASHLENS_URL", "").strip() or DEFAULT_API_URL).rstrip('/')
         self.api_key = api_key
         self.last_workload_id = None
         self._last_client_run_id = None
@@ -204,13 +206,17 @@ class WorkloadTracker:
         stop_live = Event()
 
         def publish_live():
-            while not stop_live.wait(self.upload_interval):
+            next_upload = time.monotonic() + self.upload_interval
+            while not stop_live.wait(min(_HEARTBEAT_INTERVAL, max(0, next_upload - time.monotonic()))):
                 try:
-                    samples = sampler.snapshot() if sampler else []
-                    payload = dict(status="running", logs=logs.snapshot(),
-                                   runtime_seconds=time.monotonic() - start_time,
-                                   gpu_metrics=GPUMetricsSampler.to_json(samples) if sampler else "",
-                                   started_at=started_at)
+                    now = time.monotonic()
+                    payload = dict(status="running")
+                    if now >= next_upload:
+                        next_upload = now + self.upload_interval
+                        samples = sampler.snapshot() if sampler else []
+                        payload.update(logs=logs.snapshot(), runtime_seconds=now - start_time,
+                                       gpu_metrics=GPUMetricsSampler.to_json(samples) if sampler else "",
+                                       started_at=started_at)
                     self._deliver(record, payload, stop_live)
                 except Exception:
                     logging.getLogger(__name__).warning(
@@ -366,28 +372,3 @@ class WorkloadTracker:
         )
         response.raise_for_status()
         return response.json()
-
-
-# Singleton instance
-_global_tracker: Optional[WorkloadTracker] = None
-
-
-def init(api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
-    """Initialize global tracker"""
-    global _global_tracker
-    _global_tracker = WorkloadTracker(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model, device=device, outbox_dir=outbox_dir)
-    return _global_tracker
-
-
-def track(name: str):
-    """Use global tracker"""
-    if _global_tracker is None:
-        raise RuntimeError("Call crashlens.init() first")
-    return _global_tracker.track(name)
-
-
-def track_function(name: str):
-    """Use global tracker as decorator"""
-    if _global_tracker is None:
-        raise RuntimeError("Call crashlens.init() first")
-    return _global_tracker.track_function(name)

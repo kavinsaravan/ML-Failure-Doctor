@@ -8,10 +8,7 @@ services:
     environment:
       PORT: "8080"
       DATABASE_PATH: /app/data/crashlens.db
-      FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:-}
-      FIREWORKS_MODEL: ${FIREWORKS_MODEL:-auto}
       CRASHLENS_API_KEY: ${CRASHLENS_API_KEY:-}
-      ACCESS_MODE: ${ACCESS_MODE:-private}
       ALLOW_WORKSPACE_CREATION: ${ALLOW_WORKSPACE_CREATION:-true}
       APP_ENV: ${APP_ENV:-development}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}

@@ -4,7 +4,7 @@ import unittest
 
 
 spec = importlib.util.spec_from_file_location(
-    'score_diagnoses', Path(__file__).resolve().parents[1] / 'score_diagnoses.py')
+    'score_diagnoses', Path(__file__).resolve().parent / 'score_diagnoses.py')
 scorer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scorer)
 

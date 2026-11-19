@@ -19,7 +19,7 @@ func TestPublicWorkspaceCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	h := buildRouter(&api.Server{DB: d}, middleware.NewIPRateLimiter(60), "private")
+	h := buildRouter(&api.Server{DB: d}, middleware.NewIPRateLimiter(60))
 	request := func(method, path, body, ip, token string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.RemoteAddr = ip + ":1234"
@@ -91,7 +91,7 @@ func TestPublicWorkspaceCreation(t *testing.T) {
 		t.Fatal("public secret listing")
 	}
 	t.Setenv("ALLOW_WORKSPACE_CREATION", "false")
-	disabled := buildRouter(&api.Server{DB: d}, middleware.NewIPRateLimiter(60), "private")
+	disabled := buildRouter(&api.Server{DB: d}, middleware.NewIPRateLimiter(60))
 	w := httptest.NewRecorder()
 	disabled.ServeHTTP(w, httptest.NewRequest("POST", "/workspaces", strings.NewReader(`{"name":"disabled"}`)))
 	if w.Code != 403 {

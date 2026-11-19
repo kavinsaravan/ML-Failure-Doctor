@@ -3,11 +3,9 @@ package main
 import (
 	"crashlens/api"
 	"crashlens/db"
-	"crashlens/fireworks"
 	"crashlens/middleware"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -34,11 +32,7 @@ func TestIndividualKeysIsolateEveryEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy, _ := d.CreateWorkload("Legacy", "ML_JOB", "failed")
-	// Any accidental cross-owner AI request will be counted.
-	aiCalls := 0
-	fw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { aiCalls++; w.WriteHeader(500) }))
-	defer fw.Close()
-	h := buildRouter(&api.Server{DB: d, FWClient: &fireworks.Client{BaseURL: fw.URL, Client: fw.Client()}}, middleware.NewIPRateLimiter(600), "demo")
+	h := buildRouter(&api.Server{DB: d}, middleware.NewIPRateLimiter(600))
 	request := func(method, path, token, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		if token != "" {
@@ -59,9 +53,6 @@ func TestIndividualKeysIsolateEveryEndpoint(t *testing.T) {
 			t.Fatalf("cross-owner mutation: %d", w.Code)
 		}
 	}
-	if aiCalls != 0 {
-		t.Fatal("unauthorized diagnosis reached AI")
-	}
 	for _, token := range []string{tokenA, tokenB, "operator"} {
 		w := request("GET", "/workloads", token, "")
 		if w.Code != 200 {
@@ -81,7 +72,7 @@ func TestIndividualKeysIsolateEveryEndpoint(t *testing.T) {
 		t.Fatal(w.Body)
 	}
 	if w := request("GET", "/workloads", "", ""); w.Code != 401 {
-		t.Fatal("demo leaked multi-user data")
+		t.Fatal("anonymous request leaked multi-user data")
 	}
 	if w := request("POST", "/api-keys", tokenA, `{"name":"intruder"}`); w.Code != 403 {
 		t.Fatal("user issued key")

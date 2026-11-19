@@ -43,13 +43,13 @@ class JupyterWorkloadTracker(WorkloadTracker):
     Usage:
         from crashlens.jupyter import JupyterWorkloadTracker
 
-        tracker = JupyterWorkloadTracker("https://your-backend.railway.app")
+        tracker = JupyterWorkloadTracker(api_key="your-workspace-key")
 
         with tracker.track("Training Model", display_metrics=True):
             model.fit(X_train, y_train, epochs=10)
     """
 
-    def __init__(self, api_url: str, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
+    def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None, fireworks_api_key: Optional[str] = None, fireworks_model: Optional[str] = None, device=None, outbox_dir=None):
         super().__init__(api_url, api_key, fireworks_api_key=fireworks_api_key, fireworks_model=fireworks_model, device=device, outbox_dir=outbox_dir)
         self.in_jupyter = self._check_jupyter()
 
@@ -213,6 +213,13 @@ class JupyterWorkloadTracker(WorkloadTracker):
         """
         display(HTML(html))
 
+    def _safe_display(self, render, *args):
+        """Notebook rendering must never change the training outcome."""
+        try:
+            render(*args)
+        except Exception:
+            logging.getLogger(__name__).warning("CrashLens display failed", exc_info=True)
+
     @contextmanager
     def track(self, name: str, display_metrics: bool = True, auto_diagnose: bool = False):
         """
@@ -234,18 +241,15 @@ class JupyterWorkloadTracker(WorkloadTracker):
             with super().track(name) as workload_id:
                 entered = True
                 if self.in_jupyter:
-                    self._display_progress(workload_id, name, 0)
+                    self._safe_display(self._display_progress, workload_id, name, 0)
                 yield workload_id
         except BaseException as error:
             workload_id = workload_id if workload_id is not None else self.last_workload_id
             if entered:
                 if isinstance(error, SystemExit) and error.code in (None, 0):
-                    self._display_success(name, time.monotonic() - start, workload_id)
+                    self._safe_display(self._display_success, name, time.monotonic() - start, workload_id)
                     raise
-                try:
-                    self._display_failure(name, time.monotonic() - start, workload_id, str(error))
-                except Exception:
-                    logging.getLogger(__name__).warning("CrashLens display failed", exc_info=True)
+                self._safe_display(self._display_failure, name, time.monotonic() - start, workload_id, str(error))
                 if auto_diagnose and workload_id is not None:
                     try:
                         self._display_diagnosis(self.diagnose(workload_id, display=False))
@@ -254,9 +258,9 @@ class JupyterWorkloadTracker(WorkloadTracker):
             raise
         else:
             workload_id = workload_id if workload_id is not None else self.last_workload_id
-            self._display_success(name, time.monotonic() - start, workload_id)
+            self._safe_display(self._display_success, name, time.monotonic() - start, workload_id)
             if display_metrics and self.in_jupyter and workload_id is not None:
-                self._display_metrics(workload_id)
+                self._safe_display(self._display_metrics, workload_id)
 
     def diagnose(self, workload_id: int, display: bool = True) -> Dict[str, Any]:
         """
@@ -338,7 +342,7 @@ if JUPYTER_AVAILABLE:
 
         Usage in Jupyter:
             %load_ext crashlens.jupyter
-            %crashlens_init https://your-backend.railway.app
+            %crashlens_init
 
             %%crashlens_track "Training Model"
             model.fit(X_train, y_train)
@@ -352,16 +356,13 @@ if JUPYTER_AVAILABLE:
             Initialize CrashLens tracker
 
             Usage:
-                %crashlens_init https://your-backend.railway.app
+                %crashlens_init
 
             The API key is read from the CRASHLENS_API_KEY environment variable.
             Set it before starting Jupyter:
                 export CRASHLENS_API_KEY=your_key
             """
-            api_url = line.strip()
-            if not api_url:
-                print("❌ Please provide API URL: %crashlens_init https://your-backend.railway.app")
-                return
+            api_url = line.strip() or None
 
             # Get API key from environment, never from cell source
             api_key = os.getenv("CRASHLENS_API_KEY")
@@ -370,7 +371,7 @@ if JUPYTER_AVAILABLE:
             display(HTML(f"""
             <div style="border: 2px solid #27ae60; border-radius: 8px; padding: 15px; margin: 10px 0; background-color: #eafaf1;">
                 <h4 style="color: #27ae60; margin: 0;">✓ CrashLens Initialized</h4>
-                <p style="margin: 10px 0 0 0;">Connected to: <code>{escape(api_url)}</code></p>
+                <p style="margin: 10px 0 0 0;">Connected to: <code>{escape(self.tracker.api_url)}</code></p>
                 <p style="margin: 10px 0 0 0;">Auth: <code>{'Enabled' if api_key else 'Disabled (set CRASHLENS_API_KEY)'}</code></p>
                 <p style="margin: 10px 0 0 0;">Use <code>%%crashlens_track "Job Name"</code> to track cells</p>
             </div>
@@ -386,7 +387,7 @@ if JUPYTER_AVAILABLE:
                 model.fit(X_train, y_train)
             """
             if self.tracker is None:
-                print("❌ Please initialize CrashLens first: %crashlens_init <api_url>")
+                print("❌ Please initialize CrashLens first: %crashlens_init [api_url]")
                 return
 
             name = line.strip().strip('"').strip("'")
@@ -407,7 +408,7 @@ if JUPYTER_AVAILABLE:
                 %crashlens_diagnose 123
             """
             if self.tracker is None:
-                print("❌ Please initialize CrashLens first: %crashlens_init <api_url>")
+                print("❌ Please initialize CrashLens first: %crashlens_init [api_url]")
                 return
 
             try:
@@ -425,7 +426,7 @@ if JUPYTER_AVAILABLE:
                 %crashlens_show 123
             """
             if self.tracker is None:
-                print("❌ Please initialize CrashLens first: %crashlens_init <api_url>")
+                print("❌ Please initialize CrashLens first: %crashlens_init [api_url]")
                 return
 
             try:
@@ -449,13 +450,13 @@ def load_ipython_extension(ipython):
             <h3 style="color: #2980b9; margin-top: 0;">🔍 CrashLens Jupyter Extension Loaded</h3>
             <p style="margin: 10px 0;">Available magic commands:</p>
             <ul style="margin: 10px 0;">
-                <li><code>%crashlens_init &lt;api_url&gt;</code> - Initialize tracker</li>
+                <li><code>%crashlens_init [&lt;api_url&gt;]</code> - Initialize tracker</li>
                 <li><code>%%crashlens_track "Job Name"</code> - Track a cell</li>
                 <li><code>%crashlens_diagnose &lt;workload_id&gt;</code> - Get AI diagnosis</li>
                 <li><code>%crashlens_show &lt;workload_id&gt;</code> - Show workload details</li>
             </ul>
             <p style="margin: 10px 0 0 0; font-size: 0.9em; color: #7f8c8d;">
-                Start by running: <code>%crashlens_init https://your-backend.railway.app</code>
+                Start by running: <code>%crashlens_init</code>
             </p>
         </div>
         """))

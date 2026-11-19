@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { api, Workload, DiagnosisReport } from '@/lib/api';
+import { api, Workload, DiagnosisReport, MetricsSnapshot, getMemoryPeaks, getWorkloadStatus } from '@/lib/api';
+import ConnectionNotice from '@/components/connection-notice';
 import {
   ArrowLeft,
   AlertTriangle,
@@ -18,16 +19,6 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
-interface MetricsSnapshot {
-  timestamp: string;
-  gpu_memory_used_mb: number;
-  gpu_memory_total_mb: number;
-  gpu_memory_percent: number;
-  gpu_utilization_percent: number | null;
-  temperature_celsius: number | null;
-  source?: string;
-}
-
 export default function WorkloadDetail() {
   const params = useParams();
   const [workload, setWorkload] = useState<Workload | null>(null);
@@ -36,37 +27,31 @@ export default function WorkloadDetail() {
   const [loading, setLoading] = useState(true);
   const [diagnosing, setDiagnosing] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const inFlight = useRef(false);
+
   const loadWorkload = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setRetrying(true);
     try {
       const data = await api.getWorkload(params.id as string);
+      const report = data.failure_report ? JSON.parse(data.failure_report) : null;
+      const samples = data.gpu_metrics ? JSON.parse(data.gpu_metrics) : [];
+      if (!Array.isArray(samples)) throw new Error('Invalid GPU metrics received.');
       setWorkload(data);
-
-      setDiagnosis(null);
-      setMetrics([]);
-
-      // Parse existing diagnosis if available
-      if (data.failure_report) {
-        try {
-          const report = JSON.parse(data.failure_report);
-          setDiagnosis(report);
-        } catch (e) {
-          console.error('Failed to parse diagnosis:', e);
-        }
-      }
-
-      // Parse GPU metrics
-      if (data.gpu_metrics) {
-        try {
-          const metricsData = JSON.parse(data.gpu_metrics);
-          setMetrics(metricsData);
-        } catch (e) {
-          console.error('Failed to parse metrics:', e);
-        }
-      }
+      setDiagnosis(report);
+      setMetrics(samples);
+      setError(null);
+      setLastUpdated(new Date());
     } catch (error) {
-      console.error('Failed to load workload:', error);
+      setError('Could not refresh this workload. ' + (error instanceof Error ? error.message : 'Backend unavailable.'));
     } finally {
       setLoading(false);
+      setRetrying(false);
+      inFlight.current = false;
     }
   }, [params.id]);
 
@@ -103,18 +88,6 @@ export default function WorkloadDetail() {
       memory: m.gpu_memory_percent,
       utilization: m.gpu_utilization_percent,
     }));
-  };
-
-  const getPeakMemory = () => {
-    if (!metrics || metrics.length === 0) return null;
-    const peak = metrics.reduce((max, m) =>
-      m.gpu_memory_percent > max.gpu_memory_percent ? m : max
-    );
-    return {
-      used: peak.gpu_memory_used_mb,
-      total: peak.gpu_memory_total_mb,
-      percent: peak.gpu_memory_percent,
-    };
   };
 
   const getTimelineEvents = () => {
@@ -168,12 +141,17 @@ export default function WorkloadDetail() {
   if (!workload) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="text-white text-xl">Workload not found</div>
+        <div className="max-w-2xl p-8">
+          <Link href="/dashboard" className="text-blue-400">Back to Dashboard</Link>
+          <ConnectionNotice error={error || 'Workload not found.'} lastUpdated={lastUpdated} retrying={retrying} onRetry={() => void loadWorkload()} />
+        </div>
       </div>
     );
   }
 
-  const peakMemory = getPeakMemory();
+  const { sampledDevice, frameworkAllocatedMB } = getMemoryPeaks(metrics);
+  const peakMemory = sampledDevice ? { used: sampledDevice.gpu_memory_used_mb, total: sampledDevice.gpu_memory_total_mb, percent: sampledDevice.gpu_memory_percent } : null;
+  const displayStatus = getWorkloadStatus(workload);
   const chartData = getChartData();
   const timelineEvents = getTimelineEvents();
   const crashLogs = extractCrashLogs();
@@ -222,20 +200,29 @@ export default function WorkloadDetail() {
           </div>
         </div>
 
+        <ConnectionNotice error={error} lastUpdated={lastUpdated} retrying={retrying} onRetry={() => void loadWorkload()} />
+        {workload.heartbeat_stale && (
+          <div role="status" className="mb-6 rounded-lg border border-amber-600 bg-amber-950/40 p-4 text-amber-100">
+            No heartbeat for over two minutes. This job may have stopped or lost its connection; a failure has not been confirmed.
+            {workload.last_heartbeat_at && <p className="mt-1 text-sm">Last contact: {new Date(workload.last_heartbeat_at).toLocaleString()}</p>}
+            <p className="mt-1 text-sm">Monitoring will resume when the SDK reconnects.</p>
+          </div>
+        )}
+
         {/* Status Overview */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
               {workload.status === 'succeeded' ? (
                 <CheckCircle className="w-5 h-5 text-green-400" />
-              ) : workload.status === 'failed' ? (
+              ) : (workload.status === 'failed' || workload.heartbeat_stale) ? (
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               ) : (
                 <Activity className="w-5 h-5 text-blue-400" />
               )}
               <span className="text-sm text-slate-400">Status</span>
             </div>
-            <div className="text-xl font-bold text-white capitalize">{workload.status}</div>
+            <div className="text-xl font-bold text-white capitalize">{displayStatus}</div>
           </div>
 
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
@@ -266,6 +253,15 @@ export default function WorkloadDetail() {
             </div>
           </div>
         </div>
+
+        {metrics.length > 0 && (
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-8 text-slate-300">
+            <h2 className="font-semibold text-white mb-2">GPU memory peaks</h2>
+            {peakMemory && <p>Peak sampled device usage: {peakMemory.used.toFixed(1)} MB / {peakMemory.total.toFixed(1)} MB ({peakMemory.percent.toFixed(1)}%)</p>}
+            <p>Peak framework allocation: {frameworkAllocatedMB == null ? 'Unavailable' : `${frameworkAllocatedMB.toFixed(1)} MB`}</p>
+            <p className="text-sm text-slate-400 mt-2">Device usage is sampled periodically. Framework allocation records PyTorch’s high-water mark during this run, including peaks between samples.</p>
+          </div>
+        )}
 
         {/* Diagnosis Report - CENTERPIECE */}
         {diagnosis && (
@@ -318,16 +314,6 @@ export default function WorkloadDetail() {
             <div className="mb-6">
               <h3 className="text-xl font-semibold text-white mb-3">Evidence</h3>
               <div className="bg-slate-900 rounded-lg p-6 space-y-3 border border-slate-700">
-                {peakMemory && (
-                  <div className="flex items-center gap-2">
-                    <Database className="w-4 h-4 text-orange-400" />
-                    <span className="text-slate-300">
-                      Peak GPU Memory: <span className="font-semibold text-white">
-                        {(peakMemory.used / 1024).toFixed(1)}GB / {(peakMemory.total / 1024).toFixed(1)}GB
-                      </span> ({peakMemory.percent.toFixed(1)}%)
-                    </span>
-                  </div>
-                )}
                 {diagnosis.evidence && diagnosis.evidence.length > 0 && (
                   <>
                     {diagnosis.evidence.map((line, idx) => (

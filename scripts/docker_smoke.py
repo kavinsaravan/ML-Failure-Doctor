@@ -31,8 +31,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='crashlens-smoke-') as temp:
         envfile = Path(temp) / '.env'
         envfile.write_text('\n'.join([
-            f'CRASHLENS_API_KEY={key}', 'ACCESS_MODE=private', 'APP_ENV=production',
-            'FIREWORKS_API_KEY=', f'BACKEND_PORT={api_port}', f'FRONTEND_PORT={frontend_port}',
+            f'CRASHLENS_API_KEY={key}', 'APP_ENV=production',
+            f'BACKEND_PORT={api_port}', f'FRONTEND_PORT={frontend_port}',
             f'NEXT_PUBLIC_API_URL={base}', f'ALLOWED_ORIGINS={frontend}',
         ]) + '\n')
         command = [docker, 'compose', '--project-directory', str(ROOT), '--env-file', str(envfile), '-p', project]

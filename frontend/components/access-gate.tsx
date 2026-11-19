@@ -4,7 +4,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from '
 import { usePathname } from 'next/navigation';
 import { api } from '@/lib/api';
 
-type Access = 'checking' | 'public' | 'locked' | 'authenticated';
+type Access = 'checking' | 'locked' | 'authenticated';
 export default function AccessGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const attempt = useRef(0);
@@ -44,9 +44,8 @@ export default function AccessGate({ children }: { children: ReactNode }) {
     try {
       const requirements = await api.getAccessRequirements();
       if (token === attempt.current) setCreationEnabled(requirements.workspace_creation_enabled === true);
-      if (!requirements.auth_required && !api.hasAPIKey()) { apply('public'); return; }
       try { await api.checkAccess(); apply('authenticated'); }
-      catch { apply(requirements.auth_required ? 'locked' : 'public'); }
+      catch { apply('locked'); }
     } catch {
       if (token === attempt.current) { setAccess('locked'); setError('Cannot connect to the backend.'); }
     }
@@ -74,7 +73,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
         <span>Connected to your private workspace</span>
         <button onClick={disconnect} className="text-blue-300">Disconnect</button>
       </div> : <form onSubmit={connect} className="flex flex-wrap items-center gap-3">
-        <span>{access === 'public' ? 'Public access. Connect to manage workloads.' : 'Enter your CrashLens API key to access workloads.'}</span>
+        <span>Enter your CrashLens API key to access workloads.</span>
         <label htmlFor="crashlens-api-key" className="sr-only">API key</label>
         <input id="crashlens-api-key" type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="off" required className="bg-slate-800 border border-slate-600 rounded px-3 py-2" />
         <button disabled={busy} className="bg-blue-600 rounded px-4 py-2">{busy ? 'Connecting…' : 'Connect'}</button>
@@ -94,7 +93,12 @@ export default function AccessGate({ children }: { children: ReactNode }) {
         </form>}
       </div>}
       {error && <p role="alert" className="text-red-300 mt-2">{error}</p>}
-      {(access === 'locked' || access === 'public') && creationEnabled && <form onSubmit={createWorkspace} className="mt-5 flex flex-wrap items-center gap-3 border-t border-slate-700 pt-4">
+      {error === 'Cannot connect to the backend.' && (
+        <button type="button" onClick={() => void check()} className="mt-3 rounded bg-blue-600 px-4 py-2">
+          Retry connection
+        </button>
+      )}
+      {access === 'locked' && creationEnabled && <form onSubmit={createWorkspace} className="mt-5 flex flex-wrap items-center gap-3 border-t border-slate-700 pt-4">
         <label htmlFor="workspace-name">New here? Create a private workspace</label>
         <input id="workspace-name" value={workspaceName} onChange={e => setWorkspaceName(e.target.value)} maxLength={100} required className="bg-slate-800 border border-slate-600 rounded px-3 py-2" />
         <button disabled={busy} className="bg-blue-600 rounded px-4 py-2">{busy ? 'Creating…' : 'Create my workspace'}</button>
@@ -117,6 +121,6 @@ export CRASHLENS_API_KEY="<your saved key>"`}</pre>
         <button onClick={() => { setCreatedKey(''); setShowCreatedKey(false); setCopyStatus(''); }} className="bg-blue-600 rounded px-4 py-2">I have saved my key</button>
       </div>}
     </section>
-    {(access === 'public' || access === 'authenticated') && children}
+    {access === 'authenticated' && children}
   </>;
 }

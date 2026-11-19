@@ -50,6 +50,24 @@ class GPUMetricsTests(unittest.TestCase):
         torch.cuda.current_device.assert_called_once_with()
         self.assertEqual(sampler._collect_sample()["device_index"], 1)
 
+    def test_nvml_preserves_framework_peak_between_device_samples(self):
+        for peak_available in (True, False):
+            with self.subTest(peak_available=peak_available):
+                torch = self.torch(uuid='GPU-selected')
+                if not peak_available:
+                    torch.cuda.max_memory_allocated.side_effect = RuntimeError('peak unavailable')
+                nvml = Mock()
+                nvml.nvmlDeviceGetUUID.return_value = 'GPU-selected'
+                nvml.nvmlDeviceGetName.return_value = 'NVIDIA GPU'
+                nvml.nvmlDeviceGetMemoryInfo.return_value = SimpleNamespace(used=2 * 1024**3, total=8 * 1024**3)
+                nvml.nvmlDeviceGetUtilizationRates.return_value = SimpleNamespace(gpu=40)
+                nvml.nvmlDeviceGetTemperature.return_value = 35
+                sample = self.sampler(torch, 'cuda:1', nvml)._collect_sample()
+                self.assertEqual(sample['source'], 'nvidia-ml-py')
+                self.assertEqual(sample['gpu_memory_used_mb'], 2048)
+                self.assertEqual(sample['gpu_memory_peak_mb'], 5120 if peak_available else None)
+                torch.cuda.max_memory_allocated.assert_called_once_with(1)
+
     def test_nvml_sample_failure_falls_back_to_torch(self):
         torch = self.torch(uuid="GPU-selected")
         nvml = Mock()

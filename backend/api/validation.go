@@ -30,6 +30,9 @@ func validTransition(from, to string) bool {
 	return from == "pending" && (to == "running" || to == "failed" || to == "succeeded") || from == "running" && (to == "failed" || to == "succeeded")
 }
 func validateUpdates(u db.Workload) error {
+	if u.LastHeartbeatAt != nil || u.HeartbeatStale {
+		return fmt.Errorf("heartbeat metadata is managed by the server")
+	}
 	if u.Status != "" && !validStatus(u.Status) {
 		return fmt.Errorf("invalid status")
 	}

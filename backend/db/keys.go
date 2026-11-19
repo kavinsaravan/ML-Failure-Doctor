@@ -47,11 +47,6 @@ func (db *DB) ResolveAPIKey(token string) (string, error) {
 	err := db.QueryRow("SELECT owner_id FROM api_keys WHERE key_hash=? AND revoked_at IS NULL", KeyHash(token)).Scan(&owner)
 	return owner, err
 }
-func (db *DB) HasAPIKeys() (bool, error) {
-	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM api_keys").Scan(&count)
-	return count > 0, err
-}
 func (db *DB) GetAPIKeys() ([]APIKey, error) {
 	rows, err := db.Query("SELECT id,owner_id,name,created_at,revoked_at FROM api_keys ORDER BY created_at DESC")
 	if err != nil {

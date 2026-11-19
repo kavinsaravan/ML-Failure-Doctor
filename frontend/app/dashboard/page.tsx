@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { api, Workload, Stats } from '@/lib/api';
+import { api, Workload, Stats, getWorkloadStatus } from '@/lib/api';
+import ConnectionNotice from '@/components/connection-notice';
 import {
   Activity,
   AlertCircle,
@@ -17,7 +18,15 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const inFlight = useRef(false);
+
   const loadData = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setRetrying(true);
     try {
       const [workloadsData, statsData] = await Promise.all([
         api.getWorkloads(),
@@ -25,10 +34,14 @@ export default function Dashboard() {
       ]);
       setWorkloads(workloadsData);
       setStats(statsData);
+      setError(null);
+      setLastUpdated(new Date());
     } catch (error) {
-      console.error('Failed to load data:', error);
+      setError('Could not refresh workloads. ' + (error instanceof Error ? error.message : 'Backend unavailable.'));
     } finally {
       setLoading(false);
+      setRetrying(false);
+      inFlight.current = false;
     }
   }, []);
 
@@ -73,6 +86,7 @@ export default function Dashboard() {
       succeeded: 'bg-green-100 text-green-800 border-green-200',
       running: 'bg-blue-100 text-blue-800 border-blue-200',
       pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      stale: 'bg-amber-100 text-amber-800 border-amber-200',
     };
     return styles[status as keyof typeof styles] || 'bg-gray-100 text-gray-800';
   };
@@ -96,6 +110,12 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  if (!lastUpdated) return (
+    <div className="min-h-screen bg-slate-950 p-8">
+      <ConnectionNotice error={error} lastUpdated={null} retrying={retrying} onRetry={() => void loadData()} />
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -124,6 +144,8 @@ export default function Dashboard() {
             </button>
           )}
         </div>
+
+        <ConnectionNotice error={error} lastUpdated={lastUpdated} retrying={retrying} onRetry={() => void loadData()} />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
@@ -176,7 +198,7 @@ export default function Dashboard() {
               <Activity className="w-4 h-4 text-cyan-400" />
               <span className="text-sm text-slate-400">Active Jobs</span>
             </div>
-            <div className="text-2xl font-bold text-white">{workloads.filter(w => w.status === 'running' || w.status === 'pending').length}</div>
+            <div className="text-2xl font-bold text-white">{workloads.filter(w => getWorkloadStatus(w) === 'running' || w.status === 'pending').length}</div>
           </div>
         </div>
 
@@ -191,9 +213,6 @@ export default function Dashboard() {
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase">
                     Workload
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase">
-                    Type
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase">
                     Status
@@ -212,7 +231,7 @@ export default function Dashboard() {
               <tbody className="divide-y divide-slate-700">
                 {workloads.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
+                    <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
                       No workloads yet. Track a training run with the CrashLens SDK to see it here.
                     </td>
                   </tr>
@@ -224,16 +243,14 @@ export default function Dashboard() {
                         {workload.name}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-slate-300">
-                      {workload.type}
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
+                        title={workload.heartbeat_stale ? 'No heartbeat for over two minutes. The job may have stopped or lost its connection.' : undefined}
                         className={`px-2 py-1 text-xs font-medium rounded border ${getStatusBadge(
-                          workload.status
+                          getWorkloadStatus(workload)
                         )}`}
                       >
-                        {workload.status.toUpperCase()}
+                        {getWorkloadStatus(workload).toUpperCase()}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-slate-300">

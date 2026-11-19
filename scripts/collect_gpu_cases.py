@@ -137,7 +137,7 @@ def main():
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
     url=f'http://127.0.0.1:{port}'
     backendenv={**env,'PORT':str(port),'DATABASE_PATH':str(directory/'isolated.db'),'CRASHLENS_API_KEY':uuid.uuid4().hex,
-     'FIREWORKS_API_KEY':'','FIREWORKS_MODEL':'','APP_ENV':'production','ACCESS_MODE':'private','ALLOW_WORKSPACE_CREATION':'true'}
+     'APP_ENV':'production','ALLOW_WORKSPACE_CREATION':'true'}
     process=subprocess.Popen([str(binary)],cwd=ROOT,env=backendenv,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     for _ in range(100):
      try:

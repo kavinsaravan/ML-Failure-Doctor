@@ -63,7 +63,7 @@ func wilson(n, k int) []float64 {
 	return []float64{100 * (center - half), 100 * (center + half)}
 }
 func run() error {
-	path := flag.String("cases", "../evaluation/cases.json", "Dataset file")
+	path := flag.String("cases", "../evaluation/mps-104/cases.json", "Dataset file")
 	output := flag.String("out", "../evaluation/results/rules", "Output directory")
 	mode := flag.String("mode", "rules", "rules or fireworks (paid; requires FIREWORKS_API_KEY; model defaults to auto)")
 	flag.Parse()

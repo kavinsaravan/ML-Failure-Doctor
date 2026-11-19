@@ -187,6 +187,13 @@ class GPUMetricsSampler:
         except Exception:
             temp = None
 
+        peak_allocated_mb = None
+        if self.torch_cuda_available:
+            try:
+                peak_allocated_mb = self.torch.cuda.max_memory_allocated(self.device_index) / (1024 ** 2)
+            except Exception:
+                pass  # Keep NVML telemetry even if framework peak collection fails.
+
         return {
             "timestamp": timestamp,
             "device_id": self.device_id,
@@ -197,6 +204,7 @@ class GPUMetricsSampler:
             "gpu_memory_percent": (mem_info.used / mem_info.total) * 100,
             "gpu_utilization_percent": utilization.gpu,
             "temperature_celsius": temp,
+            "gpu_memory_peak_mb": peak_allocated_mb,
             "source": "nvidia-ml-py"
         }
 

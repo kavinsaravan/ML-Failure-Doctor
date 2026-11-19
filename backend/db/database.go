@@ -9,7 +9,12 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// HeartbeatTimeout marks loss of contact, not a confirmed training failure.
+const HeartbeatTimeout = 2 * time.Minute
+
 type Workload struct {
+	LastHeartbeatAt  *time.Time `json:"last_heartbeat_at,omitempty"`
+	HeartbeatStale   bool       `json:"heartbeat_stale"`
 	OwnerID          string     `json:"-"`
 	ID               int        `json:"id"`
 	Name             string     `json:"name"`
@@ -24,7 +29,6 @@ type Workload struct {
 	WastedGPUSeconds *float64   `json:"wasted_gpu_seconds,omitempty"`
 	JobLogs          *string    `json:"job_logs,omitempty"`
 	GPUMetrics       *string    `json:"gpu_metrics,omitempty"`
-	CheckpointState  *string    `json:"checkpoint_state,omitempty"`
 	FailureReport    *string    `json:"failure_report,omitempty"`
 }
 
@@ -63,7 +67,6 @@ func initSchema(db *sql.DB) error {
 		wasted_gpu_seconds REAL,
 		job_logs TEXT,
 		gpu_metrics TEXT,
-		checkpoint_state TEXT,
 		failure_report TEXT
 	);
 	`
@@ -73,6 +76,7 @@ func initSchema(db *sql.DB) error {
 	for _, column := range []struct{ name, definition string }{
 		{"owner_id", "TEXT NOT NULL DEFAULT 'legacy'"},
 		{"client_run_id", "TEXT"},
+		{"last_heartbeat_at", "TIMESTAMP"},
 	} {
 		var count int
 		if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('workloads') WHERE name = ?", column.name).Scan(&count); err != nil {
@@ -97,7 +101,7 @@ func initSchema(db *sql.DB) error {
 func (db *DB) GetWorkloads(owner ...string) ([]Workload, error) {
 	rows, err := db.Query(`
 		SELECT id, name, type, status, failure_type, created_at, started_at,
-		       finished_at, runtime_seconds, exit_code, wasted_gpu_seconds
+		       finished_at, runtime_seconds, exit_code, wasted_gpu_seconds, last_heartbeat_at
 		FROM workloads WHERE (? IS NULL OR owner_id = ?)
 		ORDER BY created_at DESC
 	`, ownerFilter(owner), ownerFilter(owner))
@@ -111,10 +115,11 @@ func (db *DB) GetWorkloads(owner ...string) ([]Workload, error) {
 		var w Workload
 		err := rows.Scan(&w.ID, &w.Name, &w.Type, &w.Status, &w.FailureType,
 			&w.CreatedAt, &w.StartedAt, &w.FinishedAt, &w.RuntimeSeconds,
-			&w.ExitCode, &w.WastedGPUSeconds)
+			&w.ExitCode, &w.WastedGPUSeconds, &w.LastHeartbeatAt)
 		if err != nil {
 			return nil, err
 		}
+		setHeartbeatState(&w)
 		workloads = append(workloads, w)
 	}
 	return workloads, rows.Err()
@@ -125,23 +130,24 @@ func (db *DB) GetWorkload(id string, owner ...string) (*Workload, error) {
 	err := db.QueryRow(`
 		SELECT id, name, type, status, failure_type, created_at, started_at,
 		       finished_at, runtime_seconds, exit_code, wasted_gpu_seconds,
-		       job_logs, gpu_metrics, checkpoint_state, failure_report, owner_id
+		       job_logs, gpu_metrics, failure_report, owner_id, last_heartbeat_at
 		FROM workloads WHERE id = ? AND (? IS NULL OR owner_id = ?)
 	`, id, ownerFilter(owner), ownerFilter(owner)).Scan(
 		&workload.ID, &workload.Name, &workload.Type, &workload.Status,
 		&workload.FailureType, &workload.CreatedAt, &workload.StartedAt,
 		&workload.FinishedAt, &workload.RuntimeSeconds, &workload.ExitCode,
 		&workload.WastedGPUSeconds, &workload.JobLogs, &workload.GPUMetrics,
-		&workload.CheckpointState, &workload.FailureReport, &workload.OwnerID,
+		&workload.FailureReport, &workload.OwnerID, &workload.LastHeartbeatAt,
 	)
+	setHeartbeatState(&workload)
 	return &workload, err
 }
 
 func (db *DB) CreateWorkload(name, workloadType, status string, owner ...string) (int64, error) {
 	result, err := db.Exec(`
-		INSERT INTO workloads (name, type, status, started_at, owner_id)
-  VALUES (?, ?, ?, ?, ?)
-	`, name, workloadType, status, startedAt(status), creationOwner(owner))
+		INSERT INTO workloads (name, type, status, started_at, owner_id, last_heartbeat_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+	`, name, workloadType, status, startedAt(status), creationOwner(owner), time.Now().UTC())
 	if err != nil {
 		return 0, err
 	}
@@ -152,9 +158,9 @@ var ErrClientRunConflict = errors.New("client_run_id already belongs to a differ
 
 // Retrying an SDK registration after a lost response must not create another run.
 func (db *DB) CreateClientWorkload(name, kind, status, owner, runID string) (int64, bool, error) {
-	result, err := db.Exec(`INSERT INTO workloads(name,type,status,started_at,owner_id,client_run_id)
- VALUES(?,?,?,?,?,?) ON CONFLICT(owner_id,client_run_id) DO NOTHING`,
-		name, kind, status, startedAt(status), owner, runID)
+	result, err := db.Exec(`INSERT INTO workloads(name,type,status,started_at,owner_id,client_run_id,last_heartbeat_at)
+ VALUES(?,?,?,?,?,?,?) ON CONFLICT(owner_id,client_run_id) DO NOTHING`,
+		name, kind, status, startedAt(status), owner, runID, time.Now().UTC())
 	if err != nil {
 		return 0, false, err
 	}
@@ -183,19 +189,22 @@ func (db *DB) UpdateWorkloadIfStatus(id string, workload *Workload, status strin
 	return db.updateWorkload(id, workload, &status)
 }
 func (db *DB) updateWorkload(id string, workload *Workload, expectedStatus *string) error {
+	now := time.Now().UTC()
+	workload.LastHeartbeatAt = &now
+	workload.HeartbeatStale = false
 	NormalizeLifecycle(workload)
 	result, err := db.Exec(`
 		UPDATE workloads
 		SET name = ?, type = ?, status = ?, failure_type = ?,
 		    started_at = ?, finished_at = ?, runtime_seconds = ?,
 		    exit_code = ?, wasted_gpu_seconds = ?,
-		    job_logs = ?, gpu_metrics = ?, checkpoint_state = ?,
-		    failure_report = ?
+		    job_logs = ?, gpu_metrics = ?,
+		    failure_report = ?, last_heartbeat_at = ?
   WHERE id = ? AND (? IS NULL OR status = ?) AND owner_id = ?
  `, workload.Name, workload.Type, workload.Status, workload.FailureType,
 		workload.StartedAt, workload.FinishedAt, workload.RuntimeSeconds,
 		workload.ExitCode, workload.WastedGPUSeconds, workload.JobLogs,
-		workload.GPUMetrics, workload.CheckpointState, workload.FailureReport, id, expectedStatus, expectedStatus, creationOwner([]string{workload.OwnerID}))
+		workload.GPUMetrics, workload.FailureReport, workload.LastHeartbeatAt, id, expectedStatus, expectedStatus, creationOwner([]string{workload.OwnerID}))
 	if err != nil {
 		return err
 	}
@@ -300,4 +309,17 @@ func creationOwner(owner []string) string {
 		return "legacy"
 	}
 	return owner[0]
+}
+
+// Preserve the reported lifecycle so delayed terminal uploads remain valid.
+// Only the monitoring state becomes stale; resuming contact clears it naturally.
+func setHeartbeatState(w *Workload) {
+	last := w.LastHeartbeatAt
+	if last == nil {
+		last = w.StartedAt
+	}
+	if last == nil {
+		last = &w.CreatedAt
+	}
+	w.HeartbeatStale = w.Status == "running" && time.Since(*last) > HeartbeatTimeout
 }

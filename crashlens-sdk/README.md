@@ -24,15 +24,15 @@ Install GPU-compatible PyTorch separately for CUDA or ROCm telemetry.
 
 ## Track a workload
 
-Create a workspace in the dashboard and save its key. Set `CRASHLENS_URL` to your
-backend URL and `CRASHLENS_API_KEY` to that workspace key, then wrap your training:
+Create a workspace in the dashboard and save its key. Set `CRASHLENS_API_KEY`
+to that workspace key, then wrap your training. The SDK connects to the hosted
+CrashLens backend automatically:
 
 ```python
 import os
 from crashlens import WorkloadTracker
 
 tracker = WorkloadTracker(
-    os.environ["CRASHLENS_URL"],
     api_key=os.environ["CRASHLENS_API_KEY"],
     fireworks_api_key=os.environ.get("FIREWORKS_API_KEY"),
     fireworks_model=os.environ.get("FIREWORKS_MODEL"),
@@ -41,6 +41,11 @@ tracker = WorkloadTracker(
 with tracker.track("Training run") as workload_id:
     train_model()  # Replace with your training code.
 ```
+
+For self-hosted deployments, set `CRASHLENS_URL` or pass `api_url=` explicitly.
+URL selection is: explicit argument → `CRASHLENS_URL` →
+`https://ml-failure-doctor-production.up.railway.app`.
+`JupyterWorkloadTracker`, `crashlens.init()`, and `%crashlens_init` use the same default.
 
 Use `@tracker.track_function("Training run")` to wrap a synchronous function.
 After a failed run, call `tracker.diagnose(workload_id)` or diagnose it in the

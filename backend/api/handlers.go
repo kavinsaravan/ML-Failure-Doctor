@@ -18,18 +18,13 @@ import (
 
 type Server struct {
 	DB                  *db.DB
-	FWClient            *fireworks.Client
 	FireworksHTTPClient *http.Client
 	WorkspaceLimiter    *middleware.IPRateLimiter
 }
 
 func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
-	mode := os.Getenv("ACCESS_MODE")
-	if mode == "" {
-		mode = "private"
-	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "auth_required": s.authRequired(mode), "access_mode": mode, "workspace_creation_enabled": WorkspaceCreationEnabled()})
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "auth_required": true, "workspace_creation_enabled": WorkspaceCreationEnabled()})
 }
 
 func (s *Server) CreateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -169,9 +164,6 @@ func (s *Server) UpdateWorkloadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if updates.FinishedAt != nil {
 		existing.FinishedAt = updates.FinishedAt
-	}
-	if updates.CheckpointState != nil {
-		existing.CheckpointState = updates.CheckpointState
 	}
 	// Merge updates with existing data (only update non-nil fields)
 	if updates.Status != "" {
@@ -343,8 +335,6 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 		if s.FireworksHTTPClient != nil {
 			client.Client = s.FireworksHTTPClient
 		}
-	} else if middleware.RequestIdentity(r).Admin {
-		client = s.FWClient
 	}
 	report := diagnosis.RunDiagnosis(workload, client)
 	if report.Source == "rules" {
@@ -381,13 +371,9 @@ func (s *Server) DiagnoseWorkloadHandler(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) SessionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"authenticated": true, "auth_required": s.authRequired("private"), "owner_id": middleware.RequestIdentity(r).Owner, "admin": middleware.RequestIdentity(r).Admin})
+	json.NewEncoder(w).Encode(map[string]interface{}{"authenticated": true, "auth_required": true, "owner_id": middleware.RequestIdentity(r).Owner, "admin": middleware.RequestIdentity(r).Admin})
 }
 
-func (s *Server) authRequired(mode string) bool {
-	hasKeys, err := s.DB.HasAPIKeys()
-	return err != nil || hasKeys || (os.Getenv("CRASHLENS_API_KEY") != "" && mode != "demo")
-}
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if !middleware.RequestIdentity(r).Admin {
 		http.Error(w, "Operator API key required", 403)

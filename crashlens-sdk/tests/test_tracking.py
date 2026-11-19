@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from IPython.core.interactiveshell import InteractiveShell
-from crashlens.workload_tracker import WorkloadTracker
+from crashlens.workload_tracker import WorkloadTracker, DEFAULT_API_URL
 from crashlens import jupyter
 
 class TrackingTests(unittest.TestCase):
@@ -20,6 +20,38 @@ class TrackingTests(unittest.TestCase):
         patch("crashlens.workload_tracker.METRICS_AVAILABLE", False).start()
         self.post.return_value.json.return_value = {"id": 7}
         self.addCleanup(patch.stopall)
+
+    def test_heartbeat_continues_when_telemetry_uploads_are_infrequent(self):
+        heartbeat = threading.Event()
+        def put(*args, **kwargs):
+            if kwargs['json'] == {'status': 'running'}:
+                heartbeat.set()
+            return Mock()
+        self.put.side_effect = put
+        with patch('crashlens.workload_tracker._HEARTBEAT_INTERVAL', .01):
+            with WorkloadTracker('http://test', upload_interval=120).track('slow uploads'):
+                self.assertTrue(heartbeat.wait(2), 'no heartbeat before the next full upload')
+        self.assertEqual(self.put.call_args.kwargs['json']['status'], 'succeeded')
+
+    def test_notebook_rendering_errors_do_not_change_training_outcomes(self):
+        for failure in (None, RuntimeError('training error'), SystemExit(0), KeyboardInterrupt()):
+            with self.subTest(error=type(failure).__name__):
+                tracker = jupyter.JupyterWorkloadTracker('http://test')
+                tracker.in_jupyter = True
+                body_ran = []
+                with patch('crashlens.jupyter.display', side_effect=RuntimeError('display error')), self.assertLogs('crashlens.jupyter', level='WARNING'):
+                    try:
+                        with tracker.track('display failure'):
+                            body_ran.append(True)
+                            if failure is not None:
+                                raise failure
+                    except BaseException as error:
+                        self.assertIs(error, failure)
+                    else:
+                        self.assertIsNone(failure)
+                self.assertTrue(body_ran, 'progress display prevented training')
+                expected = 'succeeded' if failure is None or isinstance(failure, SystemExit) else 'failed'
+                self.assertEqual(self.put.call_args.kwargs['json']['status'], expected)
 
     def test_fireworks_credentials_only_sent_for_diagnosis(self):
         tracker = WorkloadTracker("http://test", api_key="crashlens", fireworks_api_key="user-fireworks", fireworks_model="user-model")
@@ -35,6 +67,32 @@ class TrackingTests(unittest.TestCase):
         self.assertNotIn("X-Fireworks-API-Key", tracker.headers)
         WorkloadTracker("http://test", fireworks_api_key="secret").diagnose(7)
         self.assertEqual(self.post.call_args.kwargs["headers"]["X-Fireworks-Model"], "auto")
+
+    def test_url_selection_routes_uploads_and_workspace_credentials(self):
+        for environment, explicit, expected in [
+            ("", None, DEFAULT_API_URL),
+            ("   ", None, DEFAULT_API_URL),
+            (" https://self-hosted.example/ ", None, "https://self-hosted.example"),
+            ("https://environment.example", " https://explicit.example/ ", "https://explicit.example"),
+        ]:
+            with self.subTest(environment=environment, explicit=explicit), patch.dict('os.environ', {'CRASHLENS_URL': environment}):
+                tracker = WorkloadTracker(explicit, api_key="workspace")
+                with tracker.track("sample"):
+                    pass
+                self.assertEqual(self.post.call_args.args[0], expected + "/workloads")
+                self.assertEqual(self.put.call_args.args[0], expected + "/workloads/7")
+                self.assertEqual(self.post.call_args.kwargs["headers"]["Authorization"], "Bearer workspace")
+
+    def test_jupyter_initialization_allows_key_without_url(self):
+        with patch.dict('os.environ', {'CRASHLENS_URL': ''}):
+            self.assertEqual(jupyter.JupyterWorkloadTracker(api_key="workspace").api_url, DEFAULT_API_URL)
+
+    def test_notebook_magic_initializes_without_url(self):
+        magics = jupyter.CrashLensMagics(shell=InteractiveShell.instance())
+        with patch.dict('os.environ', {'CRASHLENS_URL': '', 'CRASHLENS_API_KEY': 'workspace'}), patch('crashlens.jupyter.display'):
+            magics.crashlens_init('')
+        self.assertEqual(magics.tracker.api_url, DEFAULT_API_URL)
+        self.assertEqual(magics.tracker.headers['Authorization'], 'Bearer workspace')
 
     def test_interruptions_and_exceptions_report_failure(self):
         for error in [KeyboardInterrupt(), SystemExit(2), RuntimeError("broken")]:

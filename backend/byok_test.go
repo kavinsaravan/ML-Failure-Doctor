@@ -18,8 +18,10 @@ import (
 type transportFunc func(*http.Request) (*http.Response, error)
 
 func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-func TestUserDiagnosesNeverSpendOperatorCredits(t *testing.T) {
+func TestDiagnosesUseOnlyRequestCredentials(t *testing.T) {
 	t.Setenv("CRASHLENS_API_KEY", "operator")
+	t.Setenv("FIREWORKS_API_KEY", "operator-fireworks-secret")
+	t.Setenv("FIREWORKS_MODEL", "operator-model")
 	d, err := db.New(filepath.Join(t.TempDir(), "byok.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -42,22 +44,16 @@ func TestUserDiagnosesNeverSpendOperatorCredits(t *testing.T) {
 	expectedModel := "accounts/fireworks/models/user-model"
 	transport := transportFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
-		expected := "Bearer user-fireworks-secret"
-		if strings.Contains(r.URL.Path, "operator") {
-			expected = "Bearer operator-fireworks-secret"
+		if r.Header.Get("Authorization") != "Bearer user-fireworks-secret" {
+			t.Error("diagnosis used credentials other than the request key")
 		}
-		if r.Header.Get("Authorization") != expected {
-			t.Errorf("wrong payer")
+		if r.URL.Host != "api.fireworks.ai" {
+			t.Error("credential sent to non-Fireworks host")
 		}
-		if !strings.Contains(r.URL.Path, "operator") {
-			if r.URL.Host != "api.fireworks.ai" {
-				t.Error("credential sent to non-Fireworks host")
-			}
-			var input fireworks.Request
-			json.NewDecoder(r.Body).Decode(&input)
-			if input.Model != expectedModel {
-				t.Error("user model not used")
-			}
+		var input fireworks.Request
+		json.NewDecoder(r.Body).Decode(&input)
+		if input.Model != expectedModel {
+			t.Error("user model not used")
 		}
 		status := 200
 		body := `{"model":"provider-served-model","choices":[{"message":{"tool_calls":[{"function":{"name":"diagnose_ml_failure","arguments":"{\"root_cause\":\"Allocation too large\",\"evidence\":[\"CUDA out of memory\"],\"recommended_fixes\":[\"Reduce allocation\"],\"safe_to_retry\":false}"}}]}}]}`
@@ -68,8 +64,8 @@ func TestUserDiagnosesNeverSpendOperatorCredits(t *testing.T) {
 		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})
 	client := &http.Client{Transport: transport}
-	server := &api.Server{DB: d, FWClient: &fireworks.Client{APIKey: "operator-fireworks-secret", Model: "operator-model", BaseURL: "https://api.fireworks.ai/operator", Client: client}, FireworksHTTPClient: client}
-	h := buildRouter(server, middleware.NewIPRateLimiter(600), "private")
+	server := &api.Server{DB: d, FireworksHTTPClient: client}
+	h := buildRouter(server, middleware.NewIPRateLimiter(600))
 	request := func(id int64, auth, key, model string, refresh bool) *httptest.ResponseRecorder {
 		path := fmt.Sprintf("/workloads/%d/diagnose", id)
 		if refresh {
@@ -113,8 +109,12 @@ func TestUserDiagnosesNeverSpendOperatorCredits(t *testing.T) {
 	}
 	failed = false
 	w = request(legacy, "operator", "", "", true)
+	if w.Code != 200 || calls != 2 || !strings.Contains(w.Body.String(), `"source":"rules"`) {
+		t.Fatal("operator diagnosis spent environment credentials")
+	}
+	w = request(legacy, "operator", "user-fireworks-secret", expectedModel, true)
 	if w.Code != 200 || calls != 3 || !strings.Contains(w.Body.String(), `"source":"ai"`) {
-		t.Fatal("operator billing broken")
+		t.Fatal("operator cannot diagnose with an explicit request key")
 	}
 	w = request(legacy, token, "user-fireworks-secret", "accounts/fireworks/models/user-model", true)
 	if w.Code != 404 || calls != 3 {

@@ -9,10 +9,10 @@ Or load the magic commands extension:
     %load_ext crashlens.jupyter
 """
 
-from .workload_tracker import WorkloadTracker, init, track, track_function
+from .workload_tracker import WorkloadTracker
 
 __version__ = "0.1.0"
-__all__ = ["WorkloadTracker", "init", "track", "track_function"]
+__all__ = ["WorkloadTracker"]
 
 # Jupyter integration is optional (imported on-demand)
 try:
